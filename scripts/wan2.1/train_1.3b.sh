@@ -1,0 +1,36 @@
+export MODEL_NAME="/home/xianyang/Data/models/Wan2.1-T2V-1.3B"
+export DATASET_NAME="/home/xianyang/Data/code/InContext-VideoEdit/data/senorita_videos/videos"
+export DATASET_META_NAME="/home/xianyang/Data/code/InContext-VideoEdit/data/senorita_videos/videos/meta_data.json"
+export CUDA_VISIBLE_DEVICES=0,1
+NCCL_DEBUG=INFO
+
+accelerate launch --mixed_precision="bf16" scripts/wan2.1/train_lora.py \
+  --config_path="config/wan2.1/wan_civitai.yaml" \
+  --pretrained_model_name_or_path=$MODEL_NAME \
+  --train_data_dir=$DATASET_NAME \
+  --train_data_meta=$DATASET_META_NAME \
+  --video_sample_n_frames=65 \
+  --rank 128 \
+  --source_frames=33 \
+  --edit_frames=32 \
+  --train_batch_size=4 \
+  --gradient_accumulation_steps=1 \
+  --dataloader_num_workers=8 \
+  --num_train_epochs=100 \
+  --checkpointing_steps=50 \
+  --learning_rate=1e-04 \
+  --seed=42 \
+  --output_dir="output_dir" \
+  --gradient_checkpointing \
+  --mixed_precision="bf16" \
+  --adam_weight_decay=3e-2 \
+  --adam_epsilon=1e-10 \
+  --vae_mini_batch=1 \
+  --max_grad_norm=0.05 \
+  --random_hw_adapt \
+  --enable_bucket \
+  --uniform_sampling \
+  --low_vram \
+  --debug_shapes \
+  --debug_log_interval 1 \
+  --video_edit_loss_on_edited_frames_only

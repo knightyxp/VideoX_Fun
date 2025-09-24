@@ -13,6 +13,7 @@ __pycache__/
 *$py.class
 scripts_demo*
 
+*.sif
 # C extensions
 *.so
 

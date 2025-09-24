@@ -7,7 +7,7 @@ from .pipeline_wan import WanPipeline
 from .pipeline_wan2_2 import Wan2_2Pipeline
 from .pipeline_wan2_2_fun_control import Wan2_2FunControlPipeline
 from .pipeline_wan2_2_fun_inpaint import Wan2_2FunInpaintPipeline
-from .pipeline_wan2_2_s2v import Wan2_2S2VPipeline
+# from .pipeline_wan2_2_s2v import Wan2_2S2VPipeline
 from .pipeline_wan2_2_ti2v import Wan2_2TI2VPipeline
 from .pipeline_wan2_2_vace_fun import Wan2_2VaceFunPipeline
 from .pipeline_wan_fun_control import WanFunControlPipeline

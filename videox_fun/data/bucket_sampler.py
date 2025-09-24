@@ -9,6 +9,14 @@ import torch
 from PIL import Image
 from torch.utils.data import BatchSampler, Dataset, Sampler
 
+CUSTOM_ASPECT_RATIOS = {
+    "0.5676": [336, 592],  # 336x592 (h x w)
+    "1.7619": [592, 336],  # 592x336
+    "0.5682": [400, 704],  # 400x704
+    "1.7600": [704, 400],  # 704x400
+}
+
+
 ASPECT_RATIO_512 = {
     '0.25': [256.0, 1024.0], '0.26': [256.0, 992.0], '0.27': [256.0, 960.0], '0.28': [256.0, 928.0],
     '0.32': [288.0, 896.0], '0.33': [288.0, 864.0], '0.35': [288.0, 832.0], '0.4': [320.0, 800.0],
@@ -348,7 +356,14 @@ class AspectRatioBatchImageVideoSampler(BatchSampler):
                     width, height = video_dict.get("width", None), video_dict.get("height", None)
 
                     if width is None or height is None:
-                        video_id, name = video_dict['file_path'], video_dict['text']
+                        # Prefer original_video -> edited_video -> file_path for video edit datasets
+                        video_id = (
+                            video_dict.get('original_video')
+                            or video_dict.get('edited_video')
+                            or video_dict.get('file_path')
+                        )
+                        if video_id is None:
+                            raise ValueError(f"No valid video path found in dataset item: {video_dict}")
                         if self.train_folder is None:
                             video_dir = video_id
                         else:
@@ -358,8 +373,11 @@ class AspectRatioBatchImageVideoSampler(BatchSampler):
                         # 获取视频尺寸
                         width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))   # 浮点数转换为整数
                         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))  # 浮点数转换为整数
+                        cap.release()
+                        if width == 0 or height == 0:
+                            raise ValueError(f"Invalid video size for {video_dir}: {width}x{height}")
                         
-                        ratio = height / width # self.dataset[idx]
+                        ratio = height / width
                     else:
                         height = int(height)
                         width = int(width)

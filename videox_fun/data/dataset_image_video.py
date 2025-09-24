@@ -20,7 +20,6 @@ from einops import rearrange
 from func_timeout import FunctionTimedOut, func_timeout
 from packaging import version as pver
 from PIL import Image
-from safetensors.torch import load_file
 from torch.utils.data import BatchSampler, Sampler
 from torch.utils.data.dataset import Dataset
 
@@ -333,6 +332,168 @@ def resize_frame(frame, target_short_side):
     resized_frame = cv2.resize(frame, (new_w, new_h))
     return resized_frame
 
+class VideoEditDataset(Dataset):
+    def __init__(
+        self,
+        ann_path, 
+        data_root=None,
+        video_sample_height: int = None,  # 改为None以支持动态分辨率
+        video_sample_width: int = None,   
+        video_sample_stride=1, 
+        video_sample_n_frames=65,  # 9+8=17 for your case
+        source_frames=33,
+        edit_frames=32,
+        text_drop_ratio=0.1,
+        enable_bucket=False,
+        enable_inpaint=False,
+        instruction_template="A video sequence showing two parts: the first half shows the original scene, and the second half shows the same scene but {edit_instruction}",
+    ):
+        dataset = json.load(open(ann_path))
+        if isinstance(dataset, dict):
+            new_dataset = []
+            for vid_id, info in dataset.items():
+                text_content = info["edit_instruction"]
+                new_dataset.append({
+                    "original_video": info["original_video"],
+                    "edited_video": info["edited_video"],
+                    "text": text_content,
+                    "type": info.get("type", "video"),
+                    # 添加分辨率信息到metadata
+                    "resolution": info.get("resolution", None)
+                })
+            dataset = new_dataset
+
+        self.data_root = data_root
+        self.dataset = dataset
+        self.length = len(self.dataset)
+        
+        self.source_frames = source_frames
+        self.edit_frames = edit_frames
+        self.video_sample_n_frames = video_sample_n_frames
+        
+        self.instruction_template = instruction_template
+        self.enable_bucket = enable_bucket
+        self.text_drop_ratio = text_drop_ratio
+        self.enable_inpaint = enable_inpaint
+        self.video_sample_stride = video_sample_stride
+        
+        # 如果启用bucket，不固定分辨率
+        if enable_bucket:
+            self.video_sample_height = None
+            self.video_sample_width = None
+        else:
+            self.video_sample_height = video_sample_height
+            self.video_sample_width = video_sample_width
+
+    def load_video_pair(self, original_path, edited_path):
+        """加载视频对，保持原始分辨率用于bucket training"""
+        if self.data_root is not None:
+            original_path = os.path.join(self.data_root, original_path)
+            edited_path = os.path.join(self.data_root, edited_path)
+
+        with VideoReader_contextmanager(original_path, num_threads=2) as orig_reader, \
+             VideoReader_contextmanager(edited_path, num_threads=2) as edit_reader:
+            
+            # 获取视频信息
+            orig_length = len(orig_reader)
+            edit_length = len(edit_reader)
+            min_length = min(orig_length, edit_length)
+            
+            # 统一采样策略
+            start_idx = 0  # 从头开始
+            
+            orig_indices = np.linspace(
+                start_idx, 
+                min(start_idx + (self.source_frames - 1) * self.video_sample_stride, orig_length - 1),
+                self.source_frames, 
+                dtype=int
+            )
+            
+            edit_indices = np.linspace(
+                start_idx,
+                min(start_idx + (self.edit_frames - 1) * self.video_sample_stride, edit_length - 1),
+                self.edit_frames,
+                dtype=int
+            )
+            
+            # 加载帧
+            orig_frames = get_video_reader_batch(orig_reader, orig_indices)
+            edit_frames = get_video_reader_batch(edit_reader, edit_indices)
+            
+            # 在拼接前对齐两段视频到相同 HxW（缩放后中心裁剪到 min(H1,H2) x min(W1,W2)）
+            def resize_and_center_crop_batch(frames_np, target_h, target_w):
+                resized = []
+                for i in range(frames_np.shape[0]):
+                    frame = frames_np[i]
+                    h, w = frame.shape[0], frame.shape[1]
+                    scale = max(target_h / h, target_w / w)
+                    new_h = int(round(h * scale))
+                    new_w = int(round(w * scale))
+                    frame_resized = cv2.resize(frame, (new_w, new_h))
+                    y0 = max((new_h - target_h) // 2, 0)
+                    x0 = max((new_w - target_w) // 2, 0)
+                    frame_cropped = frame_resized[y0:y0 + target_h, x0:x0 + target_w]
+                    resized.append(frame_cropped)
+                return np.stack(resized, axis=0)
+
+            oh, ow = orig_frames.shape[1], orig_frames.shape[2]
+            eh, ew = edit_frames.shape[1], edit_frames.shape[2]
+            target_h = min(oh, eh)
+            target_w = min(ow, ew)
+            if (oh != target_h or ow != target_w):
+                orig_frames = resize_and_center_crop_batch(orig_frames, target_h, target_w)
+            if (eh != target_h or ew != target_w):
+                edit_frames = resize_and_center_crop_batch(edit_frames, target_h, target_w)
+
+            # 如果启用bucket，返回numpy数组
+            if self.enable_bucket:
+                return np.concatenate([orig_frames, edit_frames], axis=0)
+            else:
+                # 转换为tensor并归一化
+                orig_frames = torch.from_numpy(orig_frames).permute(0, 3, 1, 2).contiguous() / 255.
+                edit_frames = torch.from_numpy(edit_frames).permute(0, 3, 1, 2).contiguous() / 255.
+                return torch.cat([orig_frames, edit_frames], dim=0)
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        data_info = self.dataset[idx % len(self.dataset)]
+        
+        while True:
+            try:
+                # 加载视频对
+                pixel_values = self.load_video_pair(
+                    data_info['original_video'],
+                    data_info['edited_video']
+                )
+                
+                # 准备文本
+                text = data_info['text']
+                if self.instruction_template and "{edit_instruction}" in self.instruction_template:
+                    text = self.instruction_template.format(edit_instruction=text)
+                
+                if random.random() < self.text_drop_ratio:
+                    text = ''
+                
+                sample = {
+                    "pixel_values": pixel_values,
+                    "text": text,
+                    "data_type": "video",
+                    "idx": idx,
+                }
+                
+                # 如果需要inpainting
+                if self.enable_inpaint and not self.enable_bucket:
+                    # 这里添加inpaint逻辑
+                    pass
+                
+                return sample
+                
+            except Exception as e:
+                print(f"Error loading video pair: {e}")
+                idx = random.randint(0, self.length-1)
+    
 class ImageVideoDataset(Dataset):
     def __init__(
         self,
@@ -554,11 +715,8 @@ class ImageVideoControlDataset(Dataset):
         video_length_drop_end=0.9,
         enable_inpaint=False,
         enable_camera_info=False,
-        return_file_name=False,
-        enable_subject_info=False,
     ):
         # Loading annotations from files
-        print(f"loading annotations from {ann_path} ...")
         if ann_path.endswith('.csv'):
             with open(ann_path, 'r') as csvfile:
                 dataset = list(csv.DictReader(csvfile))
@@ -587,9 +745,8 @@ class ImageVideoControlDataset(Dataset):
         # TODO: enable bucket training
         self.enable_bucket = enable_bucket
         self.text_drop_ratio = text_drop_ratio
-        self.enable_inpaint = enable_inpaint
+        self.enable_inpaint  = enable_inpaint
         self.enable_camera_info = enable_camera_info
-        self.enable_subject_info = enable_subject_info
 
         self.video_length_drop_start = video_length_drop_start
         self.video_length_drop_end = video_length_drop_end
@@ -678,13 +835,12 @@ class ImageVideoControlDataset(Dataset):
                     text = ''
 
             control_video_id = data_info['control_file_path']
+
+            if self.data_root is None:
+                control_video_id = control_video_id
+            else:
+                control_video_id = os.path.join(self.data_root, control_video_id)
             
-            if control_video_id is not None:
-                if self.data_root is None:
-                    control_video_id = control_video_id
-                else:
-                    control_video_id = os.path.join(self.data_root, control_video_id)
-                
             if self.enable_camera_info:
                 if control_video_id.lower().endswith('.txt'):
                     if not self.enable_bucket:
@@ -709,63 +865,35 @@ class ImageVideoControlDataset(Dataset):
                         control_pixel_values = np.zeros_like(pixel_values)
                         control_camera_values = None
             else:
-                if control_video_id is not None:
-                    with VideoReader_contextmanager(control_video_id, num_threads=2) as control_video_reader:
-                        try:
-                            sample_args = (control_video_reader, batch_index)
-                            control_pixel_values = func_timeout(
-                                VIDEO_READER_TIMEOUT, get_video_reader_batch, args=sample_args
-                            )
-                            resized_frames = []
-                            for i in range(len(control_pixel_values)):
-                                frame = control_pixel_values[i]
-                                resized_frame = resize_frame(frame, self.larger_side_of_image_and_video)
-                                resized_frames.append(resized_frame)
-                            control_pixel_values = np.array(resized_frames)
-                        except FunctionTimedOut:
-                            raise ValueError(f"Read {idx} timeout.")
-                        except Exception as e:
-                            raise ValueError(f"Failed to extract frames from video. Error is {e}.")
+                with VideoReader_contextmanager(control_video_id, num_threads=2) as control_video_reader:
+                    try:
+                        sample_args = (control_video_reader, batch_index)
+                        control_pixel_values = func_timeout(
+                            VIDEO_READER_TIMEOUT, get_video_reader_batch, args=sample_args
+                        )
+                        resized_frames = []
+                        for i in range(len(control_pixel_values)):
+                            frame = control_pixel_values[i]
+                            resized_frame = resize_frame(frame, self.larger_side_of_image_and_video)
+                            resized_frames.append(resized_frame)
+                        control_pixel_values = np.array(resized_frames)
+                    except FunctionTimedOut:
+                        raise ValueError(f"Read {idx} timeout.")
+                    except Exception as e:
+                        raise ValueError(f"Failed to extract frames from video. Error is {e}.")
 
-                        if not self.enable_bucket:
-                            control_pixel_values = torch.from_numpy(control_pixel_values).permute(0, 3, 1, 2).contiguous()
-                            control_pixel_values = control_pixel_values / 255.
-                            del control_video_reader
-                        else:
-                            control_pixel_values = control_pixel_values
-
-                        if not self.enable_bucket:
-                            control_pixel_values = self.video_transforms(control_pixel_values)
-                else:
                     if not self.enable_bucket:
-                        control_pixel_values = torch.zeros_like(pixel_values)
+                        control_pixel_values = torch.from_numpy(control_pixel_values).permute(0, 3, 1, 2).contiguous()
+                        control_pixel_values = control_pixel_values / 255.
+                        del control_video_reader
                     else:
-                        control_pixel_values = np.zeros_like(pixel_values)
+                        control_pixel_values = control_pixel_values
+
+                    if not self.enable_bucket:
+                        control_pixel_values = self.video_transforms(control_pixel_values)
                 control_camera_values = None
-            
-            if self.enable_subject_info:
-                if not self.enable_bucket:
-                    visual_height, visual_width = pixel_values.shape[-2:]
-                else:
-                    visual_height, visual_width = pixel_values.shape[1:3]
 
-                subject_id = data_info.get('object_file_path', [])
-                shuffle(subject_id)
-                subject_images = []
-                for i in range(min(len(subject_id), 4)):
-                    subject_image = Image.open(subject_id[i])
-                    width, height = subject_image.size
-                    total_pixels = width * height
-
-                    img = padding_image(subject_image, visual_width, visual_height)
-                    if random.random() < 0.5:
-                        img = img.transpose(Image.FLIP_LEFT_RIGHT)
-                    subject_images.append(img)
-                subject_image = np.array(subject_images)
-            else:
-                subject_image = None
-
-            return pixel_values, control_pixel_values, subject_image, control_camera_values, text, "video"
+            return pixel_values, control_pixel_values, control_camera_values, text, "video"
         else:
             image_path, text = data_info['file_path'], data_info['text']
             if self.data_root is not None:
@@ -791,30 +919,7 @@ class ImageVideoControlDataset(Dataset):
                 control_image = self.image_transforms(control_image).unsqueeze(0)
             else:
                 control_image = np.expand_dims(np.array(control_image), 0)
-            
-            if self.enable_subject_info:
-                if not self.enable_bucket:
-                    visual_height, visual_width = image.shape[-2:]
-                else:
-                    visual_height, visual_width = image.shape[1:3]
-
-                subject_id = data_info.get('object_file_path', [])
-                shuffle(subject_id)
-                subject_images = []
-                for i in range(min(len(subject_id), 4)):
-                    subject_image = Image.open(subject_id[i])
-                    width, height = subject_image.size
-                    total_pixels = width * height
-
-                    img = padding_image(subject_image, visual_width, visual_height)
-                    if random.random() < 0.5:
-                        img = img.transpose(Image.FLIP_LEFT_RIGHT)
-                    subject_images.append(img)
-                subject_image = np.array(subject_images)
-            else:
-                subject_image = None
-
-            return image, control_image, subject_image, None, text, 'image'
+            return image, control_image, None, text, 'image'
     def __len__(self):
         return self.length
 
@@ -829,11 +934,10 @@ class ImageVideoControlDataset(Dataset):
                 if data_type_local != data_type:
                     raise ValueError("data_type_local != data_type")
 
-                pixel_values, control_pixel_values, subject_image, control_camera_values, name, data_type = self.get_batch(idx)
+                pixel_values, control_pixel_values, control_camera_values, name, data_type = self.get_batch(idx)
 
                 sample["pixel_values"] = pixel_values
                 sample["control_pixel_values"] = control_pixel_values
-                sample["subject_image"] = subject_image
                 sample["text"] = name
                 sample["data_type"] = data_type
                 sample["idx"] = idx
@@ -858,30 +962,3 @@ class ImageVideoControlDataset(Dataset):
             sample["clip_pixel_values"] = clip_pixel_values
 
         return sample
-
-class ImageVideoSafetensorsDataset(Dataset):
-    def __init__(
-        self,
-        ann_path,
-        data_root=None,
-    ):
-        # Loading annotations from files
-        print(f"loading annotations from {ann_path} ...")
-        if ann_path.endswith('.json'):
-            dataset = json.load(open(ann_path))
-
-        self.data_root = data_root
-        self.dataset = dataset
-        self.length = len(self.dataset)
-        print(f"data scale: {self.length}")
-
-    def __len__(self):
-        return self.length
-
-    def __getitem__(self, idx):
-        if self.data_root is None:
-            path = self.dataset[idx]["file_path"]
-        else:
-            path = os.path.join(self.data_root, self.dataset[idx]["file_path"])
-        state_dict = load_file(path)
-        return state_dict
