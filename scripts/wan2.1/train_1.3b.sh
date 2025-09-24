@@ -1,7 +1,7 @@
-export MODEL_NAME="/home/xianyang/Data/models/Wan2.1-T2V-1.3B"
-export DATASET_NAME="/home/xianyang/Data/code/InContext-VideoEdit/data/senorita_videos/videos"
-export DATASET_META_NAME="/home/xianyang/Data/code/InContext-VideoEdit/data/senorita_videos/videos/meta_data.json"
-export CUDA_VISIBLE_DEVICES=0,1
+export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-1.3B"
+export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
+export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_removal_and_grounding_multi_seprate_instance.json"
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 NCCL_DEBUG=INFO
 
 accelerate launch --mixed_precision="bf16" scripts/wan2.1/train_lora.py \
@@ -16,11 +16,11 @@ accelerate launch --mixed_precision="bf16" scripts/wan2.1/train_lora.py \
   --train_batch_size=4 \
   --gradient_accumulation_steps=1 \
   --dataloader_num_workers=8 \
-  --num_train_epochs=100 \
-  --checkpointing_steps=50 \
+  --num_train_epochs=1 \
+  --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="output_dir" \
+  --output_dir="experiments/videox_fun_bucket_dynamic_resolution_1.3b" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
