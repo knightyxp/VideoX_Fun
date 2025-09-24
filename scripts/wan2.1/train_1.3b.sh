@@ -1,6 +1,6 @@
 export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-1.3B"
 export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
-export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_removal_and_grounding_multi_seprate_instance.json"
+export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/grounding_gray_and_obj_removal.json"
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 NCCL_DEBUG=INFO
 
