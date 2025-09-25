@@ -20,7 +20,7 @@ accelerate launch --mixed_precision="bf16" scripts/wan2.1/train_lora.py \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/videox_fun_bucket_dynamic_resolution_1.3b_bz1_4card_2epoch" \
+  --output_dir="experiments/videox_fun_bucket_dynamic_resolution_1.3b_2epoch_bz32_right_init_latents" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
@@ -31,6 +31,4 @@ accelerate launch --mixed_precision="bf16" scripts/wan2.1/train_lora.py \
   --enable_bucket \
   --uniform_sampling \
   --low_vram \
-  --debug_shapes \
-  --debug_log_interval 1 \
   --video_edit_loss_on_edited_frames_only
