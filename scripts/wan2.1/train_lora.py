@@ -1805,6 +1805,13 @@ def main():
                 sigmas = get_sigmas(timesteps, n_dim=latents.ndim, dtype=latents.dtype)
                 noisy_latents = (1.0 - sigmas) * latents + sigmas * noise
 
+                #temporal in context init 
+                edited_start_frame = (args.source_frames) // 4 + 1
+                print('edited_start_frame', edited_start_frame)
+                noisy_latents[:,:,:edited_start_frame] = latents[:,:,:edited_start_frame]
+                print('noisy_latents', noisy_latents.shape)
+                print('latents', latents.shape)
+                exit()
                 # Add noise
                 target = noise - latents
                 
