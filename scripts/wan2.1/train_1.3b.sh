@@ -13,14 +13,14 @@ accelerate launch --mixed_precision="bf16" scripts/wan2.1/train_lora.py \
   --rank 128 \
   --source_frames=33 \
   --edit_frames=32 \
-  --train_batch_size=1 \
+  --train_batch_size=16 \
   --gradient_accumulation_steps=1 \
   --dataloader_num_workers=8 \
   --num_train_epochs=2 \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/videox_fun_bucket_dynamic_resolution_1.3b_2epoch_bz32_right_init_latents" \
+  --output_dir="experiments/videox_fun_bucket_dynamic_resolution_1.3b_bz16_2epoch_right_init_latents" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
