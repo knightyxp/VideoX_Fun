@@ -5,11 +5,7 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3
 export OMP_NUM_THREADS=4
 NCCL_DEBUG=INFO
 
-accelerate launch \
-  --use_deepspeed \
-  --deepspeed_config_file config/zero_stage2_config.json \
-  --mixed_precision="bf16" \
-  scripts/wan2.1/train.py \
+accelerate launch --mixed_precision="bf16" scripts/wan2.1/train.py \
   --config_path="config/wan2.1/wan_civitai.yaml" \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATASET_NAME \
@@ -39,9 +35,8 @@ accelerate launch \
   --low_vram \
   --train_mode="normal" \
   --trainable_modules "." \
-  --video_edit_loss_on_edited_frames_only \
-  --use_deepspeed
-  
+  --video_edit_loss_on_edited_frames_only 
+
 # # Training command for I2V
 # export MODEL_NAME="models/Diffusion_Transformer/Wan2.1-I2V-14B-720P"
 # export DATASET_NAME="datasets/internal_datasets/"
