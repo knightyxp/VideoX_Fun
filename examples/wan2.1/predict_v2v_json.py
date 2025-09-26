@@ -343,8 +343,8 @@ def main():
         # Generate video
         with torch.no_grad():
             sample = pipeline(
-                input_video,
-                prompt,
+                video=input_video,
+                prompt=prompt,
                 num_frames=num_frames,
                 negative_prompt=negative_prompt,
                 height=video_height,

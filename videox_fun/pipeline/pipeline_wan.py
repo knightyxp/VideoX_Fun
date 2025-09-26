@@ -310,8 +310,8 @@ class WanPipeline(DiffusionPipeline):
             batch_size,
             num_channels_latents,
             num_latent_frames,
-            height // self.vae.spacial_compression_ratio,
-            width // self.vae.spacial_compression_ratio,
+            height // self.vae.spatial_compression_ratio,
+            width // self.vae.spatial_compression_ratio,
         )
 
         if latents is not None:
