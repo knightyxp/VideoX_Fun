@@ -549,9 +549,8 @@ class WanPipeline(DiffusionPipeline):
         latent_channels = self.transformer.config.in_channels
         latents = self.prepare_video_latents(
             video,
-            batch_size * num_videos_per_prompt,
+            batch_size,
             latent_channels,
-            num_frames,
             height,
             width,
             weight_dtype,
