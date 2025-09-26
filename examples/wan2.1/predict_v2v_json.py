@@ -338,10 +338,7 @@ def main():
         )
         
         # Align num_frames to VAE temporal compression
-        num_frames_eff = 65
-        
-        print(f'[GPU {rank}] Effective video length: {num_frames_eff}')
-        print(f'[GPU {rank}] Using video dimensions: {video_width}x{video_height}')
+        num_frames = 65
         
         # Generate video
         with torch.no_grad():
