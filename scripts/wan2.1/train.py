@@ -66,10 +66,14 @@ for project_root in project_roots:
 from videox_fun.data.bucket_sampler import (ASPECT_RATIO_512,
                                            ASPECT_RATIO_RANDOM_CROP_512,
                                            ASPECT_RATIO_RANDOM_CROP_PROB,
+                                           CUSTOM_ASPECT_RATIOS,
                                            AspectRatioBatchImageVideoSampler,
                                            RandomSampler, get_closest_ratio)
+# 为自定义分辨率创建均匀概率分布
+CUSTOM_ASPECT_RATIO_PROB = np.array([1.0] * len(CUSTOM_ASPECT_RATIOS)) / len(CUSTOM_ASPECT_RATIOS)
 from videox_fun.data.dataset_image_video import (ImageVideoDataset,
                                                 ImageVideoSampler,
+                                                VideoEditDataset,
                                                 get_random_mask)
 from videox_fun.models import (AutoencoderKLWan, CLIPModel, WanT5EncoderModel,
                               WanTransformer3DModel)
@@ -641,6 +645,21 @@ def parse_args():
         help="Num of repeat video.",
     )
     parser.add_argument(
+        "--video_edit_loss_on_edited_frames_only", action="store_true", help="Whether enable video edit loss on edited frames only.",
+    )
+    parser.add_argument(
+        "--source_frames",
+        type=int,
+        default=9,
+        help="Number of frames from the original video in VideoEditDataset.",
+    )
+    parser.add_argument(
+        "--edit_frames",
+        type=int,
+        default=8,
+        help="Number of frames from the edited video in VideoEditDataset.",
+    )
+    parser.add_argument(
         "--config_path",
         type=str,
         default=None,
@@ -730,6 +749,18 @@ def parse_args():
         type=float,
         default=1.29,
         help="Scale of mode weighting scheme. Only effective when using the `'mode'` as the `weighting_scheme`.",
+    )
+
+    parser.add_argument(
+        "--debug_shapes",
+        action="store_true",
+        help="Log input/latent shapes to verify final HxW and VAE compression.",
+    )
+    parser.add_argument(
+        "--debug_log_interval",
+        type=int,
+        default=100,
+        help="Log shapes every N global steps when --debug_shapes is enabled.",
     )
 
     args = parser.parse_args()
@@ -1152,17 +1183,22 @@ def main():
         args.training_with_video_token_length = False
         args.random_hw_adapt = False
 
-    # Get the dataset
-    train_dataset = ImageVideoDataset(
-        args.train_data_meta, args.train_data_dir,
-        video_sample_size=args.video_sample_size, video_sample_stride=args.video_sample_stride, video_sample_n_frames=args.video_sample_n_frames, 
-        video_repeat=args.video_repeat, 
-        image_sample_size=args.image_sample_size,
-        enable_bucket=args.enable_bucket, enable_inpaint=True if args.train_mode != "normal" else False,
+    # Get the dataset (VideoEditDataset like train_lora.py)
+    train_dataset = VideoEditDataset(
+        ann_path=args.train_data_meta,
+        data_root=args.train_data_dir,
+        video_sample_stride=args.video_sample_stride,
+        video_sample_n_frames=args.video_sample_n_frames,
+        source_frames=args.source_frames,
+        edit_frames=args.edit_frames,
+        text_drop_ratio=0.1,
+        enable_bucket=args.enable_bucket,
+        enable_inpaint=True if args.train_mode != "normal" else False,
     )
     
     if args.enable_bucket:
-        aspect_ratio_sample_size = {key : [x / 512 * args.video_sample_size for x in ASPECT_RATIO_512[key]] for key in ASPECT_RATIO_512.keys()}
+        # Use custom aspect ratios like train_lora.py
+        aspect_ratio_sample_size = CUSTOM_ASPECT_RATIOS
         batch_sampler_generator = torch.Generator().manual_seed(args.seed)
         batch_sampler = AspectRatioBatchImageVideoSampler(
             sampler=RandomSampler(train_dataset, generator=batch_sampler_generator), dataset=train_dataset.dataset, 
@@ -1208,8 +1244,8 @@ def main():
             if data_type == 'image':
                 random_downsample_ratio = 1 if not args.random_hw_adapt else get_random_downsample_ratio(args.image_sample_size, image_ratio=[args.image_sample_size / args.video_sample_size], rng=rng)
 
-                aspect_ratio_sample_size = {key : [x / 512 * args.image_sample_size / random_downsample_ratio for x in ASPECT_RATIO_512[key]] for key in ASPECT_RATIO_512.keys()}
-                aspect_ratio_random_crop_sample_size = {key : [x / 512 * args.image_sample_size / random_downsample_ratio for x in ASPECT_RATIO_RANDOM_CROP_512[key]] for key in ASPECT_RATIO_RANDOM_CROP_512.keys()}
+                aspect_ratio_sample_size = CUSTOM_ASPECT_RATIOS
+                aspect_ratio_random_crop_sample_size = CUSTOM_ASPECT_RATIOS
                 
                 batch_video_length = args.video_sample_n_frames + sample_n_frames_bucket_interval
             else:
@@ -1234,19 +1270,19 @@ def main():
                     random_downsample_ratio = 1
                     batch_video_length = args.video_sample_n_frames + sample_n_frames_bucket_interval
 
-                aspect_ratio_sample_size = {key : [x / 512 * args.video_sample_size / random_downsample_ratio for x in ASPECT_RATIO_512[key]] for key in ASPECT_RATIO_512.keys()}
-                aspect_ratio_random_crop_sample_size = {key : [x / 512 * args.video_sample_size / random_downsample_ratio for x in ASPECT_RATIO_RANDOM_CROP_512[key]] for key in ASPECT_RATIO_RANDOM_CROP_512.keys()}
+                aspect_ratio_sample_size = CUSTOM_ASPECT_RATIOS
+                aspect_ratio_random_crop_sample_size = CUSTOM_ASPECT_RATIOS
 
             if args.fix_sample_size is not None:
                 fix_sample_size = [int(x / 16) * 16 for x in args.fix_sample_size]
             elif args.random_ratio_crop:
                 if rng is None:
                     random_sample_size = aspect_ratio_random_crop_sample_size[
-                        np.random.choice(list(aspect_ratio_random_crop_sample_size.keys()), p = ASPECT_RATIO_RANDOM_CROP_PROB)
+                        np.random.choice(list(aspect_ratio_random_crop_sample_size.keys()), p = CUSTOM_ASPECT_RATIO_PROB)
                     ]
                 else:
                     random_sample_size = aspect_ratio_random_crop_sample_size[
-                        rng.choice(list(aspect_ratio_random_crop_sample_size.keys()), p = ASPECT_RATIO_RANDOM_CROP_PROB)
+                        rng.choice(list(aspect_ratio_random_crop_sample_size.keys()), p = CUSTOM_ASPECT_RATIO_PROB)
                     ]
                 random_sample_size = [int(x / 16) * 16 for x in random_sample_size]
             else:
@@ -1326,7 +1362,7 @@ def main():
                     clip_pixel_values = (clip_pixel_values * 0.5 + 0.5) * 255
                     new_examples["clip_pixel_values"].append(clip_pixel_values)
 
-            # Limit the number of frames to the same
+            # Limit the number of frames to the same (respect batch_video_length like train_lora.py)
             new_examples["pixel_values"] = torch.stack([example[:batch_video_length] for example in new_examples["pixel_values"]])
             if args.train_mode != "normal":
                 new_examples["mask_pixel_values"] = torch.stack([example[:batch_video_length] for example in new_examples["mask_pixel_values"]])
@@ -1637,6 +1673,15 @@ def main():
                             pixel_values_bs = pixel_values_bs.sample()
                             new_pixel_values.append(pixel_values_bs)
                         return torch.cat(new_pixel_values, dim = 0)
+                    # Debug: log shapes before VAE encode
+                    if args.debug_shapes and accelerator.is_local_main_process:
+                        should_log = (global_step == 0 and step < 2) or (global_step > 0 and (global_step % args.debug_log_interval == 0))
+                        if should_log:
+                            try:
+                                bsz_dbg, f_dbg, c_dbg, h_dbg, w_dbg = pixel_values.shape
+                                print(f"[DEBUG] pixel_values shape (B,F,C,H,W): {(bsz_dbg, f_dbg, c_dbg, h_dbg, w_dbg)} dtype={pixel_values.dtype}")
+                            except Exception as _:
+                                pass
                     if vae_stream_1 is not None:
                         vae_stream_1.wait_stream(torch.cuda.current_stream())
                         with torch.cuda.stream(vae_stream_1):
@@ -1675,6 +1720,18 @@ def main():
                 # wait for latents = vae.encode(pixel_values) to complete
                 if vae_stream_1 is not None:
                     torch.cuda.current_stream().wait_stream(vae_stream_1)
+
+                # Debug: log shapes after VAE encode and effective compression
+                if args.debug_shapes and accelerator.is_local_main_process:
+                    should_log = (global_step == 0 and step < 2) or (global_step > 0 and (global_step % args.debug_log_interval == 0))
+                    if should_log:
+                        try:
+                            b_lat, c_lat, f_lat, h_lat, w_lat = latents.shape
+                            # Note: pixel_values is still available and unchanged here
+                            b_in, f_in, c_in, h_in, w_in = pixel_values.shape
+                            print(f"[DEBUG] latents shape (B,C,F,H,W): {(b_lat, c_lat, f_lat, h_lat, w_lat)} dtype={latents.dtype}")
+                        except Exception as _:
+                            pass
 
                 if args.low_vram:
                     vae.to('cpu')
@@ -1743,6 +1800,11 @@ def main():
                 sigmas = get_sigmas(timesteps, n_dim=latents.ndim, dtype=latents.dtype)
                 noisy_latents = (1.0 - sigmas) * latents + sigmas * noise
 
+                # Temporal in-context init for video edit (like train_lora.py)
+                if args.video_edit_loss_on_edited_frames_only:
+                    edited_start_frame = (args.source_frames) // 4 + 1
+                    noisy_latents[:, :, :edited_start_frame] = latents[:, :, :edited_start_frame]
+
                 # Add noise
                 target = noise - latents
                 
@@ -1777,8 +1839,15 @@ def main():
                     return final_loss
                 
                 weighting = compute_loss_weighting_for_sd3(weighting_scheme=args.weighting_scheme, sigmas=sigmas)
-                loss = custom_mse_loss(noise_pred.float(), target.float(), weighting.float())
-                loss = loss.mean()
+                if args.video_edit_loss_on_edited_frames_only:
+                    # Only compute loss on edited frames
+                    source_frames_latent = (args.source_frames - 1) // 4 + 1
+                    edited_start_frame = source_frames_latent
+                    noise_pred_edited = noise_pred[:, :, edited_start_frame:, :, :]
+                    target_edited = target[:, :, edited_start_frame:, :, :]
+                    loss = custom_mse_loss(noise_pred_edited.float(), target_edited.float(), weighting.float())
+                else:
+                    loss = custom_mse_loss(noise_pred.float(), target.float(), weighting.float())
 
                 if args.motion_sub_loss and noise_pred.size()[1] > 2:
                     gt_sub_noise = noise_pred[:, :, 1:].float() - noise_pred[:, :, :-1].float()
