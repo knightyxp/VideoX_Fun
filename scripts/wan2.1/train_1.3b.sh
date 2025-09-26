@@ -4,17 +4,13 @@ export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/gro
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 NCCL_DEBUG=INFO
 
-accelerate launch \
-  --use_deepspeed \
-  --deepspeed_config_file config/zero_stage2_config.json \
-  --mixed_precision="bf16" \
-  scripts/wan2.1/train_lora.py \
+accelerate launch --mixed_precision="bf16" scripts/wan2.1/train_lora.py \
   --config_path="config/wan2.1/wan_civitai.yaml" \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATASET_NAME \
   --train_data_meta=$DATASET_META_NAME \
   --video_sample_n_frames=65 \
-  --rank=128 \
+  --rank 128 \
   --source_frames=33 \
   --edit_frames=32 \
   --train_batch_size=16 \
@@ -24,7 +20,7 @@ accelerate launch \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/videox_fun_bucket_dynamic_resolution_1.3b_bz16_2epoch_right_init_latents_zero_stage2" \
+  --output_dir="experiments/videox_fun_bucket_dynamic_resolution_1.3b_bz16_2epoch_right_init_latents" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
@@ -35,5 +31,4 @@ accelerate launch \
   --enable_bucket \
   --uniform_sampling \
   --low_vram \
-  --video_edit_loss_on_edited_frames_only \
-  --use_deepspeed
+  --video_edit_loss_on_edited_frames_only

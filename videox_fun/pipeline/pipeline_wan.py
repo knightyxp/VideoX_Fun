@@ -288,6 +288,58 @@ class WanPipeline(DiffusionPipeline):
             latents = latents * self.scheduler.init_noise_sigma
         return latents
 
+    def prepare_video_latents(
+        self,
+        video: torch.Tensor,
+        batch_size: int = 1,
+        num_channels_latents: int = 16,
+        height: int = 480,
+        width: int = 832,
+        dtype: torch.dtype = torch.float32,
+        device: torch.device = None,
+        generator: torch.Generator = None,
+        condition_count: int = None,
+        latents: torch.Tensor = None,
+        timestep: torch.Tensor = None,
+    ):
+
+        video = video.to(device=device, dtype=dtype)
+        num_latent_frames = (video.shape[2] - 1) // self.vae.temporal_compression_ratio + 1
+
+        shape = (
+            batch_size,
+            num_channels_latents,
+            num_latent_frames,
+            height // self.vae.spacial_compression_ratio,
+            width // self.vae.spacial_compression_ratio,
+        )
+
+        if latents is not None:
+            return latents.to(device=device, dtype=dtype)
+
+        video_latents = []
+        print('video',video.shape)
+        for i in range(video.shape[0]):
+            # 假设 self.vae.encode 返回的是 (LatentDistribution, …)
+            latent_dist = self.vae.encode(video[i : i + 1])[0]
+            latent = latent_dist.mode()          # 直接取 mode，不做 mean/std
+            video_latents.append(latent)
+        init_latents = torch.cat(video_latents, dim=0)  # (B, C, T, H', W')
+    
+        # 再往前 condition_count 帧注入随机 noise
+        noise = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        init_latents[:, :, condition_count:, :, :] = noise[:, :, condition_count:, :, :]
+
+        # 现在可以正确调用 add_noise
+        # init_latents[:, :, condition_count:, :, :] = self.scheduler.add_noise(
+        #     init_latents[:, :, condition_count:, :, :], 
+        #     noise[:, :, condition_count:, :, :], 
+        #     timestep
+        # )
+        # print('init_latents shape',init_latents.shape)
+        return init_latents
+
+
     def decode_latents(self, latents: torch.Tensor) -> torch.Tensor:
         frames = self.vae.decode(latents.to(self.vae.dtype)).sample
         frames = (frames / 2 + 0.5).clamp(0, 1)
@@ -385,6 +437,7 @@ class WanPipeline(DiffusionPipeline):
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
+        video: Union[torch.FloatTensor] = None,
         prompt: Optional[Union[str, List[str]]] = None,
         negative_prompt: Optional[Union[str, List[str]]] = None,
         height: int = 480,
@@ -489,9 +542,13 @@ class WanPipeline(DiffusionPipeline):
             from comfy.utils import ProgressBar
             pbar = ProgressBar(num_inference_steps + 1)
 
+        condition_count = num_frames // 8 + 1
+        print('condition_count',condition_count)
+
         # 5. Prepare latents
         latent_channels = self.transformer.config.in_channels
-        latents = self.prepare_latents(
+        latents = self.prepare_video_latents(
+            video,
             batch_size * num_videos_per_prompt,
             latent_channels,
             num_frames,
@@ -500,6 +557,7 @@ class WanPipeline(DiffusionPipeline):
             weight_dtype,
             device,
             generator,
+            condition_count,
             latents,
         )
         if comfyui_progressbar:
@@ -540,6 +598,10 @@ class WanPipeline(DiffusionPipeline):
                 if do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+                ######source video no noise pred################
+                noise_pred[:, :, :condition_count] = 0
+                ######source video no noise pred################
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
