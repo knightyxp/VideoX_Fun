@@ -1,6 +1,6 @@
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 
-torchrun --nproc_per_node=4 examples/wan2.1/predict_v2v_json.py \
+torchrun --nproc_per_node=4 examples/wan2.1/predict_sft_v2v.py \
   --test_json  /scratch3/yan204/yxp/InContext-VideoEdit/data/test_json/test_multi_instance_removal_ground.json \
   --output_dir results/sft_rem_ground_1.3b_bz16_2epoch_test \
   --seed 0 \
