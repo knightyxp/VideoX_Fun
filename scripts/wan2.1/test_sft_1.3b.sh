@@ -7,7 +7,7 @@ torchrun --nproc_per_node=4 examples/wan2.1/predict_sft_v2v.py \
   --transformer_path ./experiments/sft_rem_grounding_gray_1.3b_bz16_lr_2e-05_zero2_2epoch/checkpoint-1857/transformer/diffusion_pytorch_model.safetensors
 
 
-# torchrun --nproc_per_node=4 examples/wan2.1/predict_v2v_json.py \
+# torchrun --nproc_per_node=4 examples/wan2.1/predict_sft_v2v.py \
 #   --test_json  /scratch3/yan204/yxp/InContext-VideoEdit/data/test_json/senorita_obj_swap_test.json \
 #   --output_dir results/sft_obj_swap_1w_1.3b_bz32_2epoch_test \
 #   --seed 0 \
