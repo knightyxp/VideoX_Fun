@@ -10,7 +10,7 @@ accelerate launch \
   --zero3_save_16bit_model true \
   --zero3_init_flag true \
   --use_deepspeed \
-  --deepspeed_config_file config/zero_stage3_config.json \
+  --deepspeed_config_file config/zero_stage3_config_cpu_offload.json \
   --mixed_precision="bf16" \
   scripts/wan2.1/train_lora.py \
   --config_path="config/wan2.1/wan_civitai.yaml" \
