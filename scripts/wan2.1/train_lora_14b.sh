@@ -30,7 +30,7 @@ accelerate launch \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
   --adam_epsilon=1e-10 \
-  --vae_mini_batch=8 \
+  --vae_mini_batch=2 \
   --max_grad_norm=0.05 \
   --random_hw_adapt \
   --enable_bucket \
