@@ -6,14 +6,9 @@ export OMP_NUM_THREADS=4
 NCCL_DEBUG=INFO
 
 accelerate launch \
+  --use_deepspeed \
+  --deepspeed_config_file config/zero_stage2_config.json \
   --mixed_precision="bf16" \
-  --use_fsdp \
-  --fsdp_auto_wrap_policy TRANSFORMER_BASED_WRAP \
-  --fsdp_transformer_layer_cls_to_wrap=WanAttentionBlock \
-  --fsdp_sharding_strategy "FULL_SHARD" \
-  --fsdp_state_dict_type=SHARDED_STATE_DICT \
-  --fsdp_backward_prefetch "BACKWARD_PRE" \
-  --fsdp_cpu_ram_efficient_loading False \
   scripts/wan2.1/train_lora.py \
   --config_path="config/wan2.1/wan_civitai.yaml" \
   --pretrained_model_name_or_path=$MODEL_NAME \
@@ -25,12 +20,12 @@ accelerate launch \
   --edit_frames=32 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
-  --dataloader_num_workers=2 \
+  --dataloader_num_workers=0 \
   --num_train_epochs=2 \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/obj_swap_1w_14b_bz1_2epoch_fsdp" \
+  --output_dir="experiments/obj_swap_1w_14b_bz1_2epoch_zero2" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
@@ -42,4 +37,4 @@ accelerate launch \
   --uniform_sampling \
   --low_vram \
   --video_edit_loss_on_edited_frames_only \
-  --use_fsdp
+  --use_deepspeed
