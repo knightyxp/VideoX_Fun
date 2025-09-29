@@ -18,19 +18,19 @@ accelerate launch \
   --rank=128 \
   --source_frames=33 \
   --edit_frames=32 \
-  --train_batch_size=2 \
+  --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
   --dataloader_num_workers=2 \
   --num_train_epochs=2 \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/obj_swap_1w_14b_bz2_2epoch_zero2" \
+  --output_dir="experiments/obj_swap_1w_14b_bz1_2epoch_zero2" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
   --adam_epsilon=1e-10 \
-  --vae_mini_batch=2 \
+  --vae_mini_batch=1 \
   --max_grad_norm=0.05 \
   --random_hw_adapt \
   --enable_bucket \
