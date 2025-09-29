@@ -1,0 +1,16 @@
+{
+  "total": 20000,
+  "successful": 20000,
+  "missing": 0,
+  "decode_fail": 0,
+  "resolutions": {
+    "336x592": 13766,
+    "592x336": 6234
+  },
+  "aspect_ratios": {
+    "0.5676": 13766,
+    "1.7619": 6234
+  },
+  "missing_paths": [],
+  "decode_failed_paths": []
+}
