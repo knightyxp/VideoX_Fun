@@ -10,7 +10,7 @@ accelerate launch \
   --deepspeed_config_file config/zero_stage2_config.json \
   --mixed_precision="bf16" \
   scripts/wan2.1/train_lora.py \
-  --config_path="config/wan2.1/wan_civitai.yaml" \a c
+  --config_path="config/wan2.1/wan_civitai.yaml" \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATASET_NAME \
   --train_data_meta=$DATASET_META_NAME \
