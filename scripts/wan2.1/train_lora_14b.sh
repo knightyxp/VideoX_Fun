@@ -14,13 +14,13 @@ accelerate launch \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATASET_NAME \
   --train_data_meta=$DATASET_META_NAME \
-  --video_sample_n_frames=65 \
+  --video_sample_n_frames=33 \
   --rank=128 \
-  --source_frames=33 \
-  --edit_frames=32 \
+  --source_frames=17 \
+  --edit_frames=16 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
-  --dataloader_num_workers=0 \
+  --dataloader_num_workers=1 \
   --num_train_epochs=2 \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
