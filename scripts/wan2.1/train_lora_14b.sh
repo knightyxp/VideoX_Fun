@@ -3,12 +3,12 @@ export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
 export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_swap_top1w.json"
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 export OMP_NUM_THREADS=1
-export NCCL_DEBUG=INFO
+NCCL_DEBUG=INFO
 
-torchrun \
-  --nproc_per_node=4 \
-  --nnodes=1 \
-  --master_port=29500 \
+accelerate launch \
+  --use_deepspeed \
+  --deepspeed_config_file config/zero_stage2_config.json \
+  --mixed_precision="bf16" \
   scripts/wan2.1/train_lora.py \
   --config_path="config/wan2.1/wan_civitai.yaml" \
   --pretrained_model_name_or_path=$MODEL_NAME \
@@ -25,7 +25,7 @@ torchrun \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/obj_swap_1w_14b_bz1_2epoch_torchrun" \
+  --output_dir="experiments/obj_swap_1w_14b_bz1_2epoch_zero2" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
@@ -36,4 +36,5 @@ torchrun \
   --enable_bucket \
   --uniform_sampling \
   --enable_text_encoder_in_dataloader \
-  --video_edit_loss_on_edited_frames_only
+  --video_edit_loss_on_edited_frames_only \
+  --use_deepspeed
