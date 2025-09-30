@@ -3,7 +3,7 @@
         "enabled": true
     },
     "train_micro_batch_size_per_gpu": 1,
-    "train_batch_size": 4,
+    "train_batch_size": 2,
     "gradient_accumulation_steps": 1,
     "gradient_clipping": 0.05,
     "zero_optimization": {
