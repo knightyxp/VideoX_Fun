@@ -14,10 +14,10 @@ accelerate launch \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATASET_NAME \
   --train_data_meta=$DATASET_META_NAME \
-  --video_sample_n_frames=33 \
+  --video_sample_n_frames=65 \
   --rank=128 \
-  --source_frames=17 \
-  --edit_frames=16 \
+  --source_frames=33 \
+  --edit_frames=32 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
   --dataloader_num_workers=0 \
@@ -35,6 +35,5 @@ accelerate launch \
   --random_hw_adapt \
   --enable_bucket \
   --uniform_sampling \
-  --low_vram \
   --video_edit_loss_on_edited_frames_only \
   --use_deepspeed
