@@ -1,7 +1,7 @@
 export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-14B"
 export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
 export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_swap_top1w.json"
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 export NCCL_DEBUG=INFO
 export TORCH_CPP_LOG_LEVEL=DEBUG
 export TORCH_DISTRIBUTED_DEBUG=INFO
