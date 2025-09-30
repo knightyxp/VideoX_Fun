@@ -2,7 +2,7 @@ export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-14B"
 export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
 export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_swap_top1w.json"
 export CUDA_VISIBLE_DEVICES=0,1,2,3
-export OMP_NUM_THREADS=4
+export OMP_NUM_THREADS=1
 NCCL_DEBUG=INFO
 
 accelerate launch \
@@ -14,10 +14,10 @@ accelerate launch \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATASET_NAME \
   --train_data_meta=$DATASET_META_NAME \
-  --video_sample_n_frames=65 \
+  --video_sample_n_frames=33 \
   --rank=128 \
-  --source_frames=33 \
-  --edit_frames=32 \
+  --source_frames=17 \
+  --edit_frames=16 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
   --dataloader_num_workers=0 \
