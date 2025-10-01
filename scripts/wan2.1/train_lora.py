@@ -887,6 +887,20 @@ def main():
         os.path.join(args.pretrained_model_name_or_path, config['text_encoder_kwargs'].get('tokenizer_subpath', 'tokenizer')),
     )
 
+    # -------------------------
+    # Helpers: rank0 load + broadcast of state_dict
+    # -------------------------
+    def _broadcast_state_dict(state_dict, src_rank=0):
+        if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+            return state_dict
+        obj_list = [state_dict] if accelerator.process_index == src_rank else [None]
+        torch.distributed.broadcast_object_list(obj_list, src=src_rank)
+        return obj_list[0]
+
+    def _rank0_load_and_broadcast(load_fn, src_rank=0):
+        state_dict = load_fn() if accelerator.process_index == src_rank else None
+        return _broadcast_state_dict(state_dict, src_rank)
+
     def deepspeed_zero_init_disabled_context_manager():
         """
         returns either a context list that includes one that will disable zero.Init or an empty context list
@@ -955,12 +969,15 @@ def main():
 
     if args.transformer_path is not None:
         print(f"From checkpoint: {args.transformer_path}")
-        if args.transformer_path.endswith("safetensors"):
-            from safetensors.torch import load_file, safe_open
-            state_dict = load_file(args.transformer_path)
-        else:
-            state_dict = torch.load(args.transformer_path, map_location="cpu")
-        state_dict = state_dict["state_dict"] if "state_dict" in state_dict else state_dict
+        def _load_transformer_state_dict():
+            if args.transformer_path.endswith("safetensors"):
+                from safetensors.torch import load_file
+                sd = load_file(args.transformer_path, device="cpu")
+            else:
+                sd = torch.load(args.transformer_path, map_location="cpu")
+            return sd["state_dict"] if "state_dict" in sd else sd
+
+        state_dict = _rank0_load_and_broadcast(_load_transformer_state_dict, src_rank=0)
 
         m, u = transformer3d.load_state_dict(state_dict, strict=False)
         print(f"missing keys: {len(m)}, unexpected keys: {len(u)}")
@@ -968,12 +985,15 @@ def main():
 
     if args.vae_path is not None:
         print(f"From checkpoint: {args.vae_path}")
-        if args.vae_path.endswith("safetensors"):
-            from safetensors.torch import load_file, safe_open
-            state_dict = load_file(args.vae_path)
-        else:
-            state_dict = torch.load(args.vae_path, map_location="cpu")
-        state_dict = state_dict["state_dict"] if "state_dict" in state_dict else state_dict
+        def _load_vae_state_dict():
+            if args.vae_path.endswith("safetensors"):
+                from safetensors.torch import load_file
+                sd = load_file(args.vae_path, device="cpu")
+            else:
+                sd = torch.load(args.vae_path, map_location="cpu")
+            return sd["state_dict"] if "state_dict" in sd else sd
+
+        state_dict = _rank0_load_and_broadcast(_load_vae_state_dict, src_rank=0)
 
         m, u = vae.load_state_dict(state_dict, strict=False)
         print(f"missing keys: {len(m)}, unexpected keys: {len(u)}")
@@ -1453,7 +1473,12 @@ def main():
 
             if zero_stage != 3 and not args.use_fsdp:
                 from safetensors.torch import load_file
-                state_dict = load_file(os.path.join(checkpoint_folder_path, "lora_diffusion_pytorch_model.safetensors"), device=str(accelerator.device))
+                def _load_lora_state_dict():
+                    # Load on CPU on rank 0 then broadcast
+                    return load_file(os.path.join(checkpoint_folder_path, "lora_diffusion_pytorch_model.safetensors"), device="cpu")
+
+                state_dict = _rank0_load_and_broadcast(_load_lora_state_dict, src_rank=0)
+
                 m, u = accelerator.unwrap_model(network).load_state_dict(state_dict, strict=False)
                 print(f"missing keys: {len(m)}, unexpected keys: {len(u)}")
 
