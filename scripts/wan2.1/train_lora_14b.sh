@@ -4,6 +4,21 @@ export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 export NCCL_DEBUG=INFO
 
+# 放本地盘，别用 NFS
+export TRITON_CACHE_DIR=/scratch3/yan204/.triton_cache
+export HF_HOME=/scratch3/yan204/.hf
+export TRANSFORMERS_CACHE=/scratch3/yan204/.hf/transformers
+export TORCH_HOME=/scratch3/yan204/.torch
+
+# 降并行与开销
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export TOKENIZERS_PARALLELISM=false
+
+# 显存碎片更友好
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+
 accelerate launch \
   --use_deepspeed \
   --deepspeed_config_file config/zero_stage2_config.json \
@@ -18,7 +33,7 @@ accelerate launch \
   --source_frames=33 \
   --edit_frames=32 \
   --train_batch_size=1 \
-  --gradient_accumulation_steps=1 \
+  --gradient_accumulation_steps=2 \
   --dataloader_num_workers=0 \
   --num_train_epochs=2 \
   --checkpointing_steps=500 \

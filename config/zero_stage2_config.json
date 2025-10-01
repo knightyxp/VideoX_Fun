@@ -1,18 +1,23 @@
 {
-    "bf16": { "enabled": true },
-    "train_micro_batch_size_per_gpu": 1,
-    "gradient_accumulation_steps": 1,
-    "gradient_clipping": 0.05,
-    "zero_optimization": {
-      "stage": 2,
-      "overlap_comm": true,
-      "contiguous_gradients": false,
-      "reduce_bucket_size": 2e7,
-      "allgather_bucket_size": 2e7,
-      "allgather_partitions": true,
-      "reduce_scatter": true
-    },
-    "steps_per_print": 100,
-    "wall_clock_breakdown": false
-  }
-  
+  "bf16": { "enabled": true },
+  "train_micro_batch_size_per_gpu": 1,
+  "gradient_accumulation_steps": 2,
+  "gradient_clipping": 0.05,
+
+  "zero_optimization": {
+    "stage": 2,
+    "overlap_comm": false,
+    "contiguous_gradients": false,
+    "allgather_partitions": true,
+    "reduce_scatter": true,
+
+    "reduce_bucket_size": 10000000,
+    "allgather_bucket_size": 10000000,
+    "communication_data_type": "bf16"
+  },
+
+  "gradient_accumulation_fusion": false,
+  "steps_per_print": 100,
+  "wall_clock_breakdown": false,
+  "fp16": { "enabled": false }
+}
