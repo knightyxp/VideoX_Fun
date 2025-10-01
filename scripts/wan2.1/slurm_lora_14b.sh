@@ -83,7 +83,7 @@ accelerate launch \
     --checkpointing_steps 500 \
     --learning_rate 1e-04 \
     --seed 42 \
-    --output_dir "experiments/obj_swap_1w_14b_bz1_2epoch_zero2" \
+    --output_dir "experiments/obj_swap_1w_14b_bz1_2epoch_zero2_slurm" \
     --gradient_checkpointing \
     --mixed_precision "bf16" \
     --adam_weight_decay 3e-2 \
