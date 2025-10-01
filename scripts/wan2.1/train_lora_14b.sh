@@ -19,7 +19,7 @@ accelerate launch \
   --edit_frames=32 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
-  --dataloader_num_workers=1 \
+  --dataloader_num_workers=0 \
   --num_train_epochs=2 \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
@@ -31,7 +31,6 @@ accelerate launch \
   --adam_epsilon=1e-10 \
   --vae_mini_batch=1 \
   --max_grad_norm=0.05 \
-  --random_hw_adapt \
   --enable_bucket \
   --uniform_sampling \
   --video_edit_loss_on_edited_frames_only \
