@@ -1,23 +1,16 @@
 {
-  "bf16": { "enabled": true },
-  "train_micro_batch_size_per_gpu": 1,
-  "gradient_accumulation_steps": 2,
-  "gradient_clipping": 0.05,
-
-  "zero_optimization": {
-    "stage": 2,
-    "overlap_comm": false,
-    "contiguous_gradients": false,
-    "allgather_partitions": true,
-    "reduce_scatter": true,
-
-    "reduce_bucket_size": 10000000,
-    "allgather_bucket_size": 10000000,
-    "communication_data_type": "bf16"
+  "bf16": {
+      "enabled": true
   },
-
-  "gradient_accumulation_fusion": false,
-  "steps_per_print": 100,
-  "wall_clock_breakdown": false,
-  "fp16": { "enabled": false }
+  "train_micro_batch_size_per_gpu": 1,
+  "train_batch_size": "auto",
+  "gradient_accumulation_steps": "auto",
+  "dump_state": true,
+  "zero_optimization": {
+      "stage": 2,
+      "overlap_comm": true,
+      "contiguous_gradients": true,
+      "sub_group_size": 1e9,
+      "reduce_bucket_size": 5e8
+  }
 }
