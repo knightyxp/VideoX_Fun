@@ -1,15 +1,13 @@
 export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-14B"
 export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
 export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_swap_top1w.json"
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=0,1
 export NCCL_DEBUG=INFO
 
 accelerate launch \
-  --zero_stage 3 \
-  --zero3_save_16bit_model true \
-  --zero3_init_flag true \
   --use_deepspeed \
-  --deepspeed_config_file config/zero_stage3_config.json \
+  --deepspeed_config_file config/zero_stage2_config.json \
+  --mixed_precision="bf16" \
   scripts/wan2.1/train_lora.py \
   --config_path="config/wan2.1/wan_civitai.yaml" \
   --pretrained_model_name_or_path=$MODEL_NAME \
@@ -21,12 +19,12 @@ accelerate launch \
   --edit_frames=32 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
-  --dataloader_num_workers=0 \
+  --dataloader_num_workers=1 \
   --num_train_epochs=2 \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/obj_swap_1w_14b_bz1_2epoch_zero3_gpu0load_then_broadcast" \
+  --output_dir="experiments/obj_swap_1w_14b_bz1_2epoch_zero2" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
@@ -38,5 +36,4 @@ accelerate launch \
   --uniform_sampling \
   --enable_text_encoder_in_dataloader \
   --video_edit_loss_on_edited_frames_only \
-  --use_deepspeed \
-  --low_vram
+  --use_deepspeed

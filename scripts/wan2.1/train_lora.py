@@ -1,7 +1,19 @@
-"""Modified training script with GPU0 loading and broadcasting
+"""Modified from https://github.com/huggingface/diffusers/blob/main/examples/text_to_image/train_text_to_image.py
 """
 #!/usr/bin/env python
 # coding=utf-8
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
 
 import argparse
 import gc
@@ -44,12 +56,10 @@ from transformers.utils import ContextManagers
 
 import datasets
 
-# Add your project paths here
 current_file_path = os.path.abspath(__file__)
 project_roots = [os.path.dirname(current_file_path), os.path.dirname(os.path.dirname(current_file_path)), os.path.dirname(os.path.dirname(os.path.dirname(current_file_path)))]
 for project_root in project_roots:
     sys.path.insert(0, project_root) if project_root not in sys.path else None
-
 from videox_fun.data.bucket_sampler import (ASPECT_RATIO_512,
                                            ASPECT_RATIO_RANDOM_CROP_512,
                                            ASPECT_RATIO_RANDOM_CROP_PROB,
@@ -73,127 +83,7 @@ from videox_fun.utils.utils import get_image_to_video_latent, save_videos_grid
 if is_wandb_available():
     import wandb
 
-# Will error if the minimal version of diffusers is not installed. Remove at your own risks.
-check_min_version("0.18.0.dev0")
 
-logger = get_logger(__name__, log_level="INFO")
-
-
-class DistributedModelManager:
-    """Helper class for distributed model broadcasting"""
-    
-    def __init__(self, accelerator):
-        self.accelerator = accelerator
-        self.global_rank = accelerator.process_index if accelerator.num_processes > 1 else 0
-        
-    def _broadcast_model_state_dict(self, model, src=0):
-        """Broadcast model state dict from src rank to all processes"""
-        if not torch.distributed.is_initialized():
-            return model
-            
-        # Get state dict from src rank
-        if self.global_rank == src:
-            state_dict = model.state_dict()
-            # Convert state dict to a single tensor for efficient broadcasting
-            state_dict_tensor = self._state_dict_to_tensor(state_dict)
-            state_dict_info = {
-                'shapes': {k: v.shape for k, v in state_dict.items()},
-                'dtypes': {k: v.dtype for k, v in state_dict.items()},
-                'keys': list(state_dict.keys())
-            }
-        else:
-            state_dict_tensor = None
-            state_dict_info = None
-        
-        # Broadcast state dict info
-        if torch.distributed.is_initialized():
-            state_dict_info = self._broadcast_object(state_dict_info, src=src)
-        
-        # Broadcast the concatenated tensor
-        if torch.distributed.is_initialized():
-            if self.global_rank != src:
-                # Create tensor with correct shape on non-src ranks
-                total_size = sum([np.prod(state_dict_info['shapes'][k]) for k in state_dict_info['keys']])
-                state_dict_tensor = torch.zeros(total_size, dtype=list(state_dict_info['dtypes'].values())[0], 
-                                               device=self.accelerator.device)
-            state_dict_tensor = self._broadcast_tensor(state_dict_tensor, src=src)
-        
-        # Reconstruct state dict on non-src processes
-        if self.global_rank != src:
-            state_dict = self._tensor_to_state_dict(state_dict_tensor, state_dict_info)
-            model.load_state_dict(state_dict, strict=False)
-            
-        return model
-    
-    def _state_dict_to_tensor(self, state_dict):
-        """Convert state dict to a single concatenated tensor"""
-        tensors = []
-        for key in sorted(state_dict.keys()):
-            tensor = state_dict[key].flatten()
-            tensors.append(tensor)
-        
-        # Concatenate all tensors
-        concatenated = torch.cat(tensors)
-        return concatenated
-    
-    def _tensor_to_state_dict(self, concatenated_tensor, state_dict_info):
-        """Convert concatenated tensor back to state dict"""
-        state_dict = {}
-        start_idx = 0
-        
-        for key in state_dict_info['keys']:
-            shape = state_dict_info['shapes'][key]
-            dtype = state_dict_info['dtypes'][key]
-            num_elements = np.prod(shape)
-            
-            # Extract tensor slice
-            tensor_slice = concatenated_tensor[start_idx:start_idx + num_elements]
-            tensor = tensor_slice.reshape(shape).to(dtype)
-            
-            state_dict[key] = tensor
-            start_idx += num_elements
-            
-        return state_dict
-    
-    def _broadcast_object(self, obj, src=0):
-        """Broadcast a Python object from src rank to all processes"""
-        if not torch.distributed.is_initialized():
-            return obj
-            
-        # Create a list to hold the object for broadcasting
-        obj_list = [obj] if self.global_rank == src else [None]
-            
-        # Broadcast object
-        torch.distributed.broadcast_object_list(obj_list, src=src)
-        return obj_list[0]  # Extract from list
-    
-    def _broadcast_state_dict(self, state_dict, src=0):
-        """Broadcast state dict from src rank to all processes"""
-        if not torch.distributed.is_initialized():
-            return state_dict
-            
-        # Create a list to hold the state dict for broadcasting
-        state_dict_list = [state_dict] if self.global_rank == src else [{}]
-            
-        # Broadcast state dict
-        torch.distributed.broadcast_object_list(state_dict_list, src=src)
-        return state_dict_list[0]  # Extract from list
-    
-    def _broadcast_tensor(self, tensor, src=0):
-        """Broadcast a tensor from src rank to all processes"""
-        if not torch.distributed.is_initialized():
-            return tensor
-            
-        # Ensure tensor is on the correct device (GPU for distributed operations)
-        if tensor is not None:
-            tensor = tensor.to(self.accelerator.device)
-            
-        # Broadcast the tensor
-        torch.distributed.broadcast(tensor, src=src)
-        return tensor
-
-
-# Rest of your helper functions (filter_kwargs, get_random_downsample_ratio, etc.) remain the same
 def filter_kwargs(cls, kwargs):
     import inspect
     sig = inspect.signature(cls.__init__)
@@ -269,8 +159,12 @@ def resize_mask(mask, latent, process_first_frame_only=True):
         )
     return resized_mask
 
+# Will error if the minimal version of diffusers is not installed. Remove at your own risks.
+check_min_version("0.18.0.dev0")
+
+logger = get_logger(__name__, log_level="INFO")
+
 def log_validation(vae, text_encoder, tokenizer, clip_image_encoder, transformer3d, network, config, args, accelerator, weight_dtype, global_step):
-    # Your existing log_validation function
     try:
         logger.info("Running validation... ")
 
@@ -398,7 +292,6 @@ def generate_timestep_with_lognorm(low, high, shape, device="cpu", generator=Non
     return torch.clip(t.to(torch.int32), low, high - 1)
 
 def parse_args():
-    # Your existing parse_args function remains unchanged
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
     parser.add_argument(
         "--input_perturbation", type=float, default=0, help="The scale of input perturbation. Recommended 0.1."
@@ -906,9 +799,6 @@ def main():
         project_config=accelerator_project_config,
     )
 
-    # Initialize the distributed model manager
-    dist_manager = DistributedModelManager(accelerator)
-
     deepspeed_plugin = accelerator.state.deepspeed_plugin if hasattr(accelerator.state, "deepspeed_plugin") else None
     fsdp_plugin = accelerator.state.fsdp_plugin if hasattr(accelerator.state, "fsdp_plugin") else None
     if deepspeed_plugin is not None:
@@ -1008,6 +898,10 @@ def main():
         return [deepspeed_plugin.zero3_init_context_manager(enable=False)]
 
     # Currently Accelerate doesn't know how to handle multiple models under Deepspeed ZeRO stage 3.
+    # For this to work properly all models must be run through `accelerate.prepare`. But accelerate
+    # will try to assign the same optimizer with the same weights to all models during
+    # `deepspeed.initialize`, which of course doesn't work.
+    #
     # For now the following workaround will partially support Deepspeed ZeRO-3, by excluding the 2
     # frozen models from being partitioned during `zero.Init` which gets called during
     # `from_pretrained` So CLIPTextModel and AutoencoderKL will not enjoy the parameter sharding
@@ -1025,6 +919,8 @@ def main():
         vae = AutoencoderKLWan.from_pretrained(
             os.path.join(args.pretrained_model_name_or_path, config['vae_kwargs'].get('vae_subpath', 'vae')),
             additional_kwargs=OmegaConf.to_container(config['vae_kwargs']),
+            low_cpu_mem_usage=True,
+            torch_dtype=weight_dtype,
         )
         vae.eval()
         # Get Clip Image Encoder
@@ -1034,35 +930,13 @@ def main():
             )
             clip_image_encoder = clip_image_encoder.eval()
             
-    # Get Transformer - Modified to only load on GPU 0
-    if accelerator.process_index == 0:
-        logger.info("GPU 0: Loading transformer3d from pretrained...")
-        transformer3d = WanTransformer3DModel.from_pretrained(
-            os.path.join(args.pretrained_model_name_or_path, config['transformer_additional_kwargs'].get('transformer_subpath', 'transformer')),
-            transformer_additional_kwargs=OmegaConf.to_container(config['transformer_additional_kwargs']),
-        ).to(weight_dtype)
-        
-        # Load additional transformer weights if specified
-        if args.transformer_path is not None:
-            logger.info(f"GPU 0: Loading additional weights from: {args.transformer_path}")
-            if args.transformer_path.endswith("safetensors"):
-                from safetensors.torch import load_file
-                feedforward_state_dict = load_file(args.transformer_path)
-            else:
-                feedforward_state_dict = torch.load(args.transformer_path, map_location="cpu")
-            feedforward_state_dict = feedforward_state_dict["state_dict"] if "state_dict" in feedforward_state_dict else feedforward_state_dict
-            
-            m, u = transformer3d.load_state_dict(feedforward_state_dict, strict=False)
-            logger.info(f"GPU 0: missing keys: {len(m)}, unexpected keys: {len(u)}")
-            assert len(u) == 0
-    else:
-        logger.info(f"GPU {accelerator.process_index}: Creating empty transformer3d...")
-        # Create empty model on other GPUs
-        transformer3d = WanTransformer3DModel.from_pretrained(
-            os.path.join(args.pretrained_model_name_or_path, config['transformer_additional_kwargs'].get('transformer_subpath', 'transformer')),
-            transformer_additional_kwargs=OmegaConf.to_container(config['transformer_additional_kwargs']),
-        ).to(weight_dtype)
-        # Don't load weights on non-rank-0 GPUs
+    # Get Transformer
+    transformer3d = WanTransformer3DModel.from_pretrained(
+        os.path.join(args.pretrained_model_name_or_path, config['transformer_additional_kwargs'].get('transformer_subpath', 'transformer')),
+        transformer_additional_kwargs=OmegaConf.to_container(config['transformer_additional_kwargs']),
+        low_cpu_mem_usage=True, 
+        torch_dtype=weight_dtype,
+    ).to(weight_dtype)
 
     # Freeze vae and text_encoder and set transformer3d to trainable
     vae.requires_grad_(False)
@@ -1083,40 +957,30 @@ def main():
     )
     network.apply_to(text_encoder, transformer3d, args.train_text_encoder and not args.training_with_video_token_length, True)
 
-    # Broadcast transformer3d state dict from GPU 0 to all other GPUs
-    if torch.distributed.is_initialized():
-        logger.info(f"Broadcasting transformer3d state from GPU 0 to all GPUs...")
-        if accelerator.process_index == 0:
-            # GPU 0 has the loaded state dict
-            state_dict = transformer3d.state_dict()
+    if args.transformer_path is not None:
+        print(f"From checkpoint: {args.transformer_path}")
+        if args.transformer_path.endswith("safetensors"):
+            from safetensors.torch import load_file, safe_open
+            state_dict = load_file(args.transformer_path)
         else:
-            # Other GPUs will receive the state dict
-            state_dict = None
-        
-        # Broadcast the state dict
-        state_dict = dist_manager._broadcast_state_dict(state_dict, src=0)
-        
-        # Load the broadcasted state dict on non-GPU-0 processes
-        if accelerator.process_index != 0:
-            m, u = transformer3d.load_state_dict(state_dict, strict=False)
-            logger.info(f"GPU {accelerator.process_index}: Loaded broadcasted state dict. Missing: {len(m)}, Unexpected: {len(u)}")
-        
-        # Synchronize all processes
-        accelerator.wait_for_everyone()
-        logger.info("All GPUs synchronized after broadcasting transformer3d state dict")
+            state_dict = torch.load(args.transformer_path, map_location="cpu")
+        state_dict = state_dict["state_dict"] if "state_dict" in state_dict else state_dict
 
-    # Load VAE weights if specified
+        m, u = transformer3d.load_state_dict(state_dict, strict=False)
+        print(f"missing keys: {len(m)}, unexpected keys: {len(u)}")
+        assert len(u) == 0
+
     if args.vae_path is not None:
-        logger.info(f"Loading VAE weights from: {args.vae_path}")
+        print(f"From checkpoint: {args.vae_path}")
         if args.vae_path.endswith("safetensors"):
-            from safetensors.torch import load_file
+            from safetensors.torch import load_file, safe_open
             state_dict = load_file(args.vae_path)
         else:
             state_dict = torch.load(args.vae_path, map_location="cpu")
         state_dict = state_dict["state_dict"] if "state_dict" in state_dict else state_dict
 
         m, u = vae.load_state_dict(state_dict, strict=False)
-        logger.info(f"VAE loading - missing keys: {len(m)}, unexpected keys: {len(u)}")
+        print(f"missing keys: {len(m)}, unexpected keys: {len(u)}")
         assert len(u) == 0
 
     # `accelerate` 0.16.0 will have better support for customized saving
@@ -1163,7 +1027,6 @@ def main():
         else:
             def save_model_hook(models, weights, output_dir):
                 if accelerator.is_main_process:
-                    from videox_fun.utils.lora_utils import save_model
                     safetensor_save_path = os.path.join(output_dir, f"lora_diffusion_pytorch_model.safetensors")
                     save_model(safetensor_save_path, accelerator.unwrap_model(models[-1]))
                     if not args.use_deepspeed:
@@ -1250,6 +1113,15 @@ def main():
         args.random_hw_adapt = False
 
     # Get the dataset
+    # train_dataset = ImageVideoDataset(
+    #     args.train_data_meta, args.train_data_dir,
+    #     video_sample_size=args.video_sample_size, video_sample_stride=args.video_sample_stride, video_sample_n_frames=args.video_sample_n_frames, 
+    #     video_repeat=args.video_repeat, 
+    #     image_sample_size=args.image_sample_size,
+    #     enable_bucket=args.enable_bucket, 
+    #     enable_inpaint=True if args.train_mode != "normal" else False,
+    # )
+
     train_dataset = VideoEditDataset(
         ann_path=args.train_data_meta,
         data_root=args.train_data_dir,
