@@ -34,6 +34,5 @@ accelerate launch \
   --random_hw_adapt \
   --enable_bucket \
   --uniform_sampling \
-  --enable_text_encoder_in_dataloader \
   --video_edit_loss_on_edited_frames_only \
   --use_deepspeed
