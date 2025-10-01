@@ -919,7 +919,6 @@ def main():
         vae = AutoencoderKLWan.from_pretrained(
             os.path.join(args.pretrained_model_name_or_path, config['vae_kwargs'].get('vae_subpath', 'vae')),
             additional_kwargs=OmegaConf.to_container(config['vae_kwargs']),
-            torch_dtype=weight_dtype,
         )
         vae.eval()
         # Get Clip Image Encoder
