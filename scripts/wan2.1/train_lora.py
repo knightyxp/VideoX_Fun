@@ -944,15 +944,17 @@ def main():
         clip_image_encoder.requires_grad_(False)
 
     # Lora will work with this...
-    network = create_network(
-        1.0,
-        args.rank,
-        args.network_alpha,
-        text_encoder,
-        transformer3d,
-        neuron_dropout=None,
-        skip_name=args.lora_skip_name,
-    )
+    zero3_ctx = deepspeed_plugin.zero3_init_context_manager() if deepspeed_plugin is not None else contextlib.nullcontext()
+    with zero3_ctx:
+        network = create_network(
+            1.0,
+            args.rank,
+            args.network_alpha,
+            None,
+            transformer3d,
+            neuron_dropout=None,
+            skip_name=args.lora_skip_name,
+        )
     network.apply_to(text_encoder, transformer3d, args.train_text_encoder and not args.training_with_video_token_length, True)
 
     if args.transformer_path is not None:
