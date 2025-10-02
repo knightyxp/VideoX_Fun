@@ -7,7 +7,7 @@
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=480G
-#SBATCH --time=10:00:00
+#SBATCH --time=2:00:00
 #SBATCH --output=./slurmlog/slurm-%j.out
 #SBATCH --error=./slurmlog/slurm-%j.err
 
