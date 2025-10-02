@@ -1,11 +1,11 @@
 #!/bin/bash -l
-#SBATCH --job-name=lora_14b_swap
+#SBATCH --job-name=videox-fun_lora_14b
 #SBATCH --account=OD-235404
-#SBATCH --partition=h2gpu
+#SBATCH --partition=gpu
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=4
-#SBATCH --cpus-per-gpu=64
+#SBATCH --gpus-per-task=4
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=480G
 #SBATCH --time=2:00:00
 #SBATCH --output=./slurmlog/slurm-%j.out
