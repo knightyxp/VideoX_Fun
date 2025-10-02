@@ -494,6 +494,181 @@ class VideoEditDataset(Dataset):
                 print(f"Error loading video pair: {e}")
                 idx = random.randint(0, self.length-1)
     
+class VideoEditReasoningDataset(Dataset):
+    def __init__(
+        self,
+        ann_path, 
+        data_root=None,
+        video_sample_height: int = None,
+        video_sample_width: int = None,
+        video_sample_stride=1,
+        video_sample_n_frames=65,
+        source_frames=33,
+        reasoning_frames=4,
+        edit_frames=32,
+        text_drop_ratio=0.1,
+        enable_bucket=False,
+        enable_inpaint=False,
+        instruction_template="A video sequence showing three parts: first the original scene, then grounded frames, and finally the same scene but {edit_instruction}",
+    ):
+        dataset = json.load(open(ann_path))
+        if isinstance(dataset, dict):
+            new_dataset = []
+            for vid_id, info in dataset.items():
+                text_content = info.get("edit_instruction", info.get("text", ""))
+                # support both 'grounded_video' and 'ground_video'
+                grounded_key = "grounded_video" if "grounded_video" in info else "ground_video"
+                new_dataset.append({
+                    "original_video": info["original_video"],
+                    "grounded_video": info[grounded_key],
+                    "edited_video": info["edited_video"],
+                    "text": text_content,
+                    "type": info.get("type", "video"),
+                    "resolution": info.get("resolution", None),
+                })
+            dataset = new_dataset
+
+        self.data_root = data_root
+        self.dataset = dataset
+        self.length = len(self.dataset)
+
+        self.source_frames = source_frames
+        self.reasoning_frames = reasoning_frames
+        self.edit_frames = edit_frames
+        self.video_sample_n_frames = video_sample_n_frames
+
+        self.instruction_template = instruction_template
+        self.enable_bucket = enable_bucket
+        self.text_drop_ratio = text_drop_ratio
+        self.enable_inpaint = enable_inpaint
+        self.video_sample_stride = video_sample_stride
+
+        if enable_bucket:
+            self.video_sample_height = None
+            self.video_sample_width = None
+        else:
+            self.video_sample_height = video_sample_height
+            self.video_sample_width = video_sample_width
+
+    def load_video_pair(self, original_path, grounded_path, edited_path):
+        if self.data_root is not None:
+            original_path = os.path.join(self.data_root, original_path)
+            grounded_path = os.path.join(self.data_root, grounded_path)
+            edited_path = os.path.join(self.data_root, edited_path)
+
+        with VideoReader_contextmanager(original_path, num_threads=2) as orig_reader, \
+             VideoReader_contextmanager(grounded_path, num_threads=2) as ground_reader, \
+             VideoReader_contextmanager(edited_path, num_threads=2) as edit_reader:
+
+            orig_length = len(orig_reader)
+            ground_length = len(ground_reader)
+            edit_length = len(edit_reader)
+
+            start_idx = 0
+
+            orig_indices = np.linspace(
+                start_idx, 
+                min(start_idx + (self.source_frames - 1) * self.video_sample_stride, max(orig_length - 1, 0)),
+                self.source_frames, 
+                dtype=int
+            )
+
+            # reasoning/grounded indices at 8-frame interval (example: 0,7,14,21, ...)
+            interval = 8
+            ground_indices_full = np.arange(0, max(ground_length, 1), interval, dtype=int)
+            if len(ground_indices_full) == 0:
+                ground_indices = np.array([0] * self.reasoning_frames, dtype=int)
+            else:
+                ground_indices = ground_indices_full[: self.reasoning_frames]
+                if len(ground_indices) < self.reasoning_frames:
+                    pad_value = ground_indices[-1] if len(ground_indices) > 0 else 0
+                    ground_indices = np.pad(
+                        ground_indices, (0, self.reasoning_frames - len(ground_indices)), constant_values=pad_value
+                    )
+
+            edit_indices = np.linspace(
+                start_idx,
+                min(start_idx + (self.edit_frames - 1) * self.video_sample_stride, max(edit_length - 1, 0)),
+                self.edit_frames,
+                dtype=int
+            )
+
+            orig_frames = get_video_reader_batch(orig_reader, orig_indices)
+            ground_frames = get_video_reader_batch(ground_reader, ground_indices)
+            edit_frames = get_video_reader_batch(edit_reader, edit_indices)
+
+            def resize_and_center_crop_batch(frames_np, target_h, target_w):
+                resized = []
+                for i in range(frames_np.shape[0]):
+                    frame = frames_np[i]
+                    h, w = frame.shape[0], frame.shape[1]
+                    scale = max(target_h / h, target_w / w)
+                    new_h = int(round(h * scale))
+                    new_w = int(round(w * scale))
+                    frame_resized = cv2.resize(frame, (new_w, new_h))
+                    y0 = max((new_h - target_h) // 2, 0)
+                    x0 = max((new_w - target_w) // 2, 0)
+                    frame_cropped = frame_resized[y0:y0 + target_h, x0:x0 + target_w]
+                    resized.append(frame_cropped)
+                return np.stack(resized, axis=0)
+
+            oh, ow = orig_frames.shape[1], orig_frames.shape[2]
+            gh, gw = ground_frames.shape[1], ground_frames.shape[2]
+            eh, ew = edit_frames.shape[1], edit_frames.shape[2]
+            target_h = min(oh, gh, eh)
+            target_w = min(ow, gw, ew)
+            if (oh != target_h or ow != target_w):
+                orig_frames = resize_and_center_crop_batch(orig_frames, target_h, target_w)
+            if (gh != target_h or gw != target_w):
+                ground_frames = resize_and_center_crop_batch(ground_frames, target_h, target_w)
+            if (eh != target_h or ew != target_w):
+                edit_frames = resize_and_center_crop_batch(edit_frames, target_h, target_w)
+
+            if self.enable_bucket:
+                return np.concatenate([orig_frames, ground_frames, edit_frames], axis=0)
+            else:
+                orig_frames = torch.from_numpy(orig_frames).permute(0, 3, 1, 2).contiguous() / 255.
+                ground_frames = torch.from_numpy(ground_frames).permute(0, 3, 1, 2).contiguous() / 255.
+                edit_frames = torch.from_numpy(edit_frames).permute(0, 3, 1, 2).contiguous() / 255.
+                return torch.cat([orig_frames, ground_frames, edit_frames], dim=0)
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        data_info = self.dataset[idx % len(self.dataset)]
+
+        while True:
+            try:
+                pixel_values = self.load_video_pair(
+                    data_info['original_video'],
+                    data_info.get['grounded_video'],
+                    data_info['edited_video'],
+                )
+
+                text = data_info.get('text', '')
+                if self.instruction_template and "{edit_instruction}" in self.instruction_template:
+                    text = self.instruction_template.format(edit_instruction=text)
+
+                if random.random() < self.text_drop_ratio:
+                    text = ''
+
+                sample = {
+                    "pixel_values": pixel_values,
+                    "text": text,
+                    "data_type": "video",
+                    "idx": idx,
+                }
+
+                if self.enable_inpaint and not self.enable_bucket:
+                    pass
+
+                return sample
+
+            except Exception as e:
+                print(f"Error loading video triplet: {e}")
+                idx = random.randint(0, self.length-1)
+    
 class ImageVideoDataset(Dataset):
     def __init__(
         self,

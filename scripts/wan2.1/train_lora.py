@@ -78,6 +78,7 @@ CUSTOM_ASPECT_RATIO_PROB = np.array([1.0] * len(CUSTOM_ASPECT_RATIOS)) / len(CUS
 from videox_fun.data.dataset_image_video import (ImageVideoDataset,
                                                 ImageVideoSampler,
                                                 VideoEditDataset,
+                                                VideoEditReasoningDataset,
                                                 get_random_mask)
 from videox_fun.models import (AutoencoderKLWan, CLIPModel, WanT5EncoderModel,
                               WanTransformer3DModel)
@@ -680,6 +681,18 @@ def parse_args():
         help="Number of frames from the edited video in VideoEditDataset.",
     )
     parser.add_argument(
+        "--reasoning_frames",
+        type=int,
+        default=4,
+        help="Number of grounded frames in VideoEditReasoningDataset.",
+    )
+    parser.add_argument(
+        "--use_reasoning_dataset",
+        action="store_true",
+        default=False,
+        help="Use VideoEditReasoningDataset (triplet: original/grounded/edited).",
+    )
+    parser.add_argument(
         "--config_path",
         type=str,
         default=None,
@@ -1158,17 +1171,35 @@ def main():
     #     enable_inpaint=True if args.train_mode != "normal" else False,
     # )
 
-    train_dataset = VideoEditDataset(
-        ann_path=args.train_data_meta,
-        data_root=args.train_data_dir,
-        video_sample_stride=args.video_sample_stride,
-        video_sample_n_frames=args.video_sample_n_frames,
-        source_frames=args.source_frames,
-        edit_frames=args.edit_frames,
-        text_drop_ratio=0.1,
-        enable_bucket=args.enable_bucket,
-        enable_inpaint=True if args.train_mode != "normal" else False,
-    )
+    # Choose dataset by flag
+    use_reasoning_dataset = args.use_reasoning_dataset
+
+    if use_reasoning_dataset:
+        print("Detected grounded triplet metadata. Using VideoEditReasoningDataset.")
+        train_dataset = VideoEditReasoningDataset(
+            ann_path=args.train_data_meta,
+            data_root=args.train_data_dir,
+            video_sample_stride=args.video_sample_stride,
+            video_sample_n_frames=args.video_sample_n_frames,
+            source_frames=args.source_frames,
+            reasoning_frames=args.reasoning_frames,
+            edit_frames=args.edit_frames,
+            text_drop_ratio=0.1,
+            enable_bucket=args.enable_bucket,
+            enable_inpaint=True if args.train_mode != "normal" else False,
+        )
+    else:
+        train_dataset = VideoEditDataset(
+            ann_path=args.train_data_meta,
+            data_root=args.train_data_dir,
+            video_sample_stride=args.video_sample_stride,
+            video_sample_n_frames=args.video_sample_n_frames,
+            source_frames=args.source_frames,
+            edit_frames=args.edit_frames,
+            text_drop_ratio=0.1,
+            enable_bucket=args.enable_bucket,
+            enable_inpaint=True if args.train_mode != "normal" else False,
+        )
 
     if args.enable_bucket:
         #aspect_ratio_sample_size = {key : [x / 512 * args.video_sample_size for x in ASPECT_RATIO_512[key]] for key in ASPECT_RATIO_512.keys()}

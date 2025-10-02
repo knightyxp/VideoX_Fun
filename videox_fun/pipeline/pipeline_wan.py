@@ -443,6 +443,7 @@ class WanPipeline(DiffusionPipeline):
         height: int = 480,
         width: int = 720,
         num_frames: int = 49,
+        source_frames: int = 33,
         num_inference_steps: int = 50,
         timesteps: Optional[List[int]] = None,
         guidance_scale: float = 6,
@@ -542,7 +543,7 @@ class WanPipeline(DiffusionPipeline):
             from comfy.utils import ProgressBar
             pbar = ProgressBar(num_inference_steps + 1)
 
-        condition_count = num_frames // 8 + 1
+        condition_count = source_frames // 8 + 1
         print('condition_count',condition_count)
 
         # 5. Prepare latents
