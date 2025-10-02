@@ -34,7 +34,9 @@ export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-14B"
 export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
 export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_swap_top1w.json"
 
-
+# NCCL settings
+export NCCL_DEBUG=WARN
+export NCCL_ASYNC_ERROR_HANDLING=1
 export TRITON_CACHE_DIR=/scratch3/yan204/.triton_cache
 
 echo "START TIME: $(date)"
@@ -45,11 +47,12 @@ echo "WORLD_SIZE=$WORLD_SIZE"
 echo "Current node: $(hostname)"
 echo "SLURM_NODEID=$SLURM_NODEID"
 
-# 关键：在远端再展开 SLURM 变量，用反斜杠 \$
-srun bash -lc '
+srun --export=ALL bash -lc '
+source "'"$CONDA_ROOT"'/etc/profile.d/conda.sh"
+conda activate videox-fun
 echo "Node: $(hostname), SLURM_NODEID: $SLURM_NODEID, SLURM_PROCID: $SLURM_PROCID"
 
-accelerate launch \
+python -m accelerate.commands.launch \
   --use_deepspeed \
   --deepspeed_config_file config/zero_stage2_config.json \
   --mixed_precision bf16 \
