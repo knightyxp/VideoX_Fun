@@ -13,23 +13,29 @@
 
 set -euo pipefail
 
-# Setup environment
+# ===== Env =====
 export CONDA_ROOT=/scratch3/yan204/env/miniconda3
 export PATH="$CONDA_ROOT/bin:$PATH"
 module load cuda/12.1.0 || true
-
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
-conda activate videox-fun || { echo 'Conda env videox-fun not found'; exit 1; }
+conda activate videox-fun
 
-# Project setup
 PROJECT_DIR=/scratch3/yan204/yxp/VideoX_Fun
 cd "$PROJECT_DIR"
 mkdir -p slurmlog
 
-# Distributed setup
+# ===== Dist =====
 export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
 export MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
-export WORLD_SIZE=$((SLURM_JOB_NUM_NODES * 4))
+export WORLD_SIZE=$((SLURM_JOB_NUM_NODES * 4))   # 2*4=8
+
+# ===== Paths =====
+export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-14B"
+export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
+export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_swap_top1w.json"
+
+
+export TRITON_CACHE_DIR=/scratch3/yan204/.triton_cache
 
 echo "START TIME: $(date)"
 echo "MASTER_ADDR=$MASTER_ADDR"
@@ -37,35 +43,26 @@ echo "MASTER_PORT=$MASTER_PORT"
 echo "NODES=$SLURM_JOB_NUM_NODES"
 echo "WORLD_SIZE=$WORLD_SIZE"
 echo "Current node: $(hostname)"
-echo "SLURM_NODEID=$SLURM_NODEID"  # 这个才是节点ID！
+echo "SLURM_NODEID=$SLURM_NODEID"
 
-# Data paths
-export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-14B"
-export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
-export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj_swap_top1w.json"
+# 关键：在远端再展开 SLURM 变量，用反斜杠 \$
+srun bash -lc '
+echo "Node: $(hostname), SLURM_NODEID: $SLURM_NODEID, SLURM_PROCID: $SLURM_PROCID"
 
-# NCCL settings
-export NCCL_DEBUG=INFO
-export NCCL_ASYNC_ERROR_HANDLING=1
-export TRITON_CACHE_DIR=/scratch3/yan204/.triton_cache
-
-# 关键修改：使用SLURM_NODEID而不是SLURM_PROCID
-srun bash -c "
-echo 'Node: \$(hostname), SLURM_NODEID: $SLURM_NODEID, SLURM_PROCID: \$SLURM_PROCID'
 accelerate launch \
   --use_deepspeed \
   --deepspeed_config_file config/zero_stage2_config.json \
   --mixed_precision bf16 \
-  --num_machines $SLURM_JOB_NUM_NODES \
-  --num_processes $WORLD_SIZE \
+  --num_machines '"$SLURM_JOB_NUM_NODES"' \
+  --num_processes '"$WORLD_SIZE"' \
   --machine_rank $SLURM_NODEID \
-  --main_process_ip $MASTER_ADDR \
-  --main_process_port $MASTER_PORT \
+  --main_process_ip '"$MASTER_ADDR"' \
+  --main_process_port '"$MASTER_PORT"' \
   scripts/wan2.1/train_lora.py \
     --config_path config/wan2.1/wan_civitai.yaml \
-    --pretrained_model_name_or_path $MODEL_NAME \
-    --train_data_dir $DATASET_NAME \
-    --train_data_meta $DATASET_META_NAME \
+    --pretrained_model_name_or_path '"$MODEL_NAME"' \
+    --train_data_dir '"$DATASET_NAME"' \
+    --train_data_meta '"$DATASET_META_NAME"' \
     --video_sample_n_frames 65 \
     --rank 128 \
     --source_frames 33 \
@@ -88,7 +85,7 @@ accelerate launch \
     --uniform_sampling \
     --video_edit_loss_on_edited_frames_only \
     --use_deepspeed
-"
+'
 
 echo "END TIME: $(date)"
 echo "JOB COMPLETED"
