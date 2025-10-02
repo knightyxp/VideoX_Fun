@@ -27,7 +27,7 @@ accelerate launch \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/videox_fun_bucket_dynamic_resolution_1.3b_bz32_2epoch_right_init_latents_zero2" \
+  --output_dir="experiments/CoF_ground_then_removal_only_multi_instance_data_zero2" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
