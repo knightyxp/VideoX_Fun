@@ -7,7 +7,7 @@
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=480G
-#SBATCH --time=08:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=./slurmlog/slurm-%j.out
 #SBATCH --error=./slurmlog/slurm-%j.err
 
@@ -18,32 +18,15 @@ export CONDA_ROOT=/scratch3/yan204/env/miniconda3
 export PATH="$CONDA_ROOT/bin:$PATH"
 module load cuda/12.1.0 || true
 
-# 2) Setup for multi-node training with accelerate
+# 2) Setup for multi-node
 export MASTER_ADDR=$(scontrol show hostnames $SLURM_NODELIST | head -n1)
 export MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
-echo "MASTER_ADDR=$MASTER_ADDR"
-echo "MASTER_PORT=$MASTER_PORT"
-echo "NNODES=$SLURM_JOB_NUM_NODES"
-echo "GPUS_PER_NODE=$SLURM_GPUS_PER_TASK"
-echo
-
-# Set accelerate environment variables for multi-node
-export ACCELERATE_NUM_MACHINES=$SLURM_JOB_NUM_NODES
-export ACCELERATE_NUM_PROCESSES=$((SLURM_JOB_NUM_NODES * SLURM_GPUS_PER_TASK))
-export ACCELERATE_MACHINE_RANK=$SLURM_PROCID
-export ACCELERATE_MAIN_PROCESS_IP=$MASTER_ADDR
-export ACCELERATE_MAIN_PROCESS_PORT=$MASTER_PORT
 
 mkdir -p slurmlog
 
 # 3) Activate env
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
 conda activate videox-fun || { echo 'Conda env videox-fun not found'; exit 1; }
-
-echo "WORKER $SLURM_PROCID on $(hostname)"
-echo "which python: $(which python)"
-echo "python -V: $(python -V)"
-echo
 
 # 4) Project & data/model paths
 PROJECT_DIR=/scratch3/yan204/yxp/VideoX_Fun
@@ -57,8 +40,8 @@ export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj
 export NCCL_DEBUG=INFO
 export TRITON_CACHE_DIR=/scratch3/yan204/.triton_cache
 
-# 6) Launch training with accelerate and DeepSpeed Zero Stage 2
-accelerate launch \
+# 6) 重要：使用 srun 在所有节点上启动
+srun accelerate launch \
   --use_deepspeed \
   --deepspeed_config_file config/zero_stage2_config.json \
   --mixed_precision="bf16" \
@@ -85,7 +68,6 @@ accelerate launch \
     --seed 42 \
     --output_dir "experiments/obj_swap_1w_14b_bz1_2epoch_zero2_slurm" \
     --gradient_checkpointing \
-    --mixed_precision "bf16" \
     --adam_weight_decay 3e-2 \
     --adam_epsilon 1e-10 \
     --vae_mini_batch 1 \
