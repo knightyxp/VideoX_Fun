@@ -126,8 +126,8 @@ def parse_args():
 
 
 # Configuration parameters (keeping your original settings)
-GPU_memory_mode = "sequential_cpu_offload"
-ulysses_degree = 1
+GPU_memory_mode = "model_full_load"
+ulysses_degree = 2
 ring_degree = 1
 fsdp_dit = False
 fsdp_text_encoder = True
