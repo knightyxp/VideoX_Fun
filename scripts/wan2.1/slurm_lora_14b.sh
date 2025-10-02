@@ -4,14 +4,12 @@
 #SBATCH --partition=gpu
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=4
+#SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=48
 #SBATCH --mem=300G
 #SBATCH --time=2:00:00
 #SBATCH --output=./slurmlog/slurm-%j.out
 #SBATCH --error=./slurmlog/slurm-%j.err
-
-set -euo pipefail
 
 # ===== Environment Setup =====
 export CONDA_ROOT=/scratch3/yan204/env/miniconda3
