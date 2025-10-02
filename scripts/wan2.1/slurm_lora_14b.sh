@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --job-name=lora_14b_swap
 #SBATCH --account=OD-235404
-#SBATCH --partition=gpu
+#SBATCH --partition=h2gpu
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=4
