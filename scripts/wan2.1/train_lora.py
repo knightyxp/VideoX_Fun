@@ -16,6 +16,8 @@
 # See the License for the specific language governing permissions and
 
 import argparse
+import json
+import contextlib
 import gc
 import logging
 import math
@@ -36,6 +38,10 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.state import AcceleratorState
 from accelerate.utils import ProjectConfiguration, set_seed
+try:
+    from accelerate.utils import DeepSpeedPlugin
+except Exception:
+    DeepSpeedPlugin = None
 from diffusers import DDIMScheduler, FlowMatchEulerDiscreteScheduler
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import (EMAModel,
@@ -705,6 +711,12 @@ def parse_args():
         "--use_deepspeed", action="store_true", help="Whether or not to use deepspeed."
     )
     parser.add_argument(
+        "--deepspeed_config",
+        type=str,
+        default=None,
+        help="Path to DeepSpeed json config. If unset, will try env ACCELERATE_DEEPSPEED_CONFIG_FILE or defaults.",
+    )
+    parser.add_argument(
         "--use_fsdp", action="store_true", help="Whether or not to use fsdp."
     )
     parser.add_argument(
@@ -792,12 +804,36 @@ def main():
     config = OmegaConf.load(args.config_path)
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
 
-    accelerator = Accelerator(
+    # Initialize DeepSpeed plugin (works for torchrun and accelerate CLI)
+    configured_deepspeed_plugin = None
+    try:
+        use_ds_env = os.environ.get("ACCELERATE_USE_DEEPSPEED", "").lower() in ("1", "true", "yes")
+        want_ds = use_ds_env or getattr(args, "use_deepspeed", False)
+        if want_ds and DeepSpeedPlugin is not None:
+            # Priority: explicit CLI config > env > default
+            ds_config_file = args.deepspeed_config or os.environ.get("ACCELERATE_DEEPSPEED_CONFIG_FILE", "config/zero_stage2_config.json")
+            zero_stage_val = int(os.environ.get("ACCELERATE_ZERO_STAGE", "2"))
+            try:
+                # Newer accelerate supports file path directly
+                configured_deepspeed_plugin = DeepSpeedPlugin(zero_stage=zero_stage_val, deepspeed_config_file=ds_config_file)
+            except TypeError:
+                # Older accelerate: load json to hf_ds_config
+                with open(ds_config_file, "r") as f:
+                    ds_cfg = json.load(f)
+                configured_deepspeed_plugin = DeepSpeedPlugin(zero_stage=zero_stage_val, hf_ds_config=ds_cfg)
+    except Exception:
+        configured_deepspeed_plugin = None
+
+    accelerator_kwargs = dict(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
     )
+    if configured_deepspeed_plugin is not None:
+        accelerator_kwargs["deepspeed_plugin"] = configured_deepspeed_plugin
+
+    accelerator = Accelerator(**accelerator_kwargs)
 
     deepspeed_plugin = accelerator.state.deepspeed_plugin if hasattr(accelerator.state, "deepspeed_plugin") else None
     fsdp_plugin = accelerator.state.fsdp_plugin if hasattr(accelerator.state, "fsdp_plugin") else None

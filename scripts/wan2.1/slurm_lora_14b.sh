@@ -35,10 +35,6 @@ export DATASET_META_NAME="/scratch3/yan204/yxp/InContext-VideoEdit/data/json/obj
 export TRITON_CACHE_DIR=/scratch3/yan204/.triton_cache
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Accelerate hints so Accelerator can pick DeepSpeed under torchrun
-export ACCELERATE_USE_DEEPSPEED=1
-export ACCELERATE_DEEPSPEED_CONFIG_FILE=config/zero_stage2_config.json
-export ACCELERATE_MIXED_PRECISION=bf16
 
 # 4) Launch training; each worker re-activates videox-fun
 srun bash -lc "
@@ -83,7 +79,8 @@ srun bash -lc "
         --enable_bucket \
         --uniform_sampling \
         --video_edit_loss_on_edited_frames_only \
-        --use_deepspeed
+        --use_deepspeed \
+        --deepspeed_config config/zero_stage2_config.json
 "
 
 echo "JOB COMPLETED"
