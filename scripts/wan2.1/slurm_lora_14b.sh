@@ -27,8 +27,8 @@ mkdir -p slurmlog
 # ===== Distributed Training Setup =====
 # Use first node as master
 export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
-# Random port to avoid conflicts
-export MASTER_PORT=$((29500 + RANDOM % 1000))
+# Use a deterministic port shared across nodes (derived from SLURM_JOB_ID)
+export MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
 # Total number of processes
 export WORLD_SIZE=$((SLURM_NNODES * SLURM_GPUS_PER_NODE))  # 2 nodes * 4 GPUs = 8
 
@@ -77,7 +77,7 @@ srun --label accelerate launch \
     --deepspeed_config_file config/zero_stage2_config.json \
     --mixed_precision bf16 \
     --num_machines $SLURM_NNODES \
-    --num_processes $WORLD_SIZE \
+    --num_processes $SLURM_GPUS_PER_NODE \
     --machine_rank $SLURM_NODEID \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
