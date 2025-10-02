@@ -642,7 +642,7 @@ class VideoEditReasoningDataset(Dataset):
             try:
                 pixel_values = self.load_video_pair(
                     data_info['original_video'],
-                    data_info.get['grounded_video'],
+                    data_info.get('grounded_video', data_info.get('ground_video')),
                     data_info['edited_video'],
                 )
 
