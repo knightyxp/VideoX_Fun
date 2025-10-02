@@ -1880,7 +1880,10 @@ def main():
                 edited_start_frame = (args.source_frames) // 4 + 1
                 noisy_latents[:,:,:edited_start_frame] = latents[:,:,:edited_start_frame]
                 #####temporal in context init ##############
-
+                print(f"noisy_latents shape: {noisy_latents.shape}")
+                print(f"latents shape: {latents.shape}")
+                print(f"edited_start_frame: {edited_start_frame}")
+                exit()
                 
                 # Add noise
                 target = noise - latents
