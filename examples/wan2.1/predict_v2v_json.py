@@ -346,6 +346,7 @@ def main():
                 video=input_video,
                 prompt=prompt,
                 num_frames=num_frames,
+                source_frames=33,
                 negative_prompt=negative_prompt,
                 height=video_height,
                 width=video_width,
