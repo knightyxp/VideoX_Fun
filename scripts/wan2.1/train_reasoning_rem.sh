@@ -1,6 +1,6 @@
 export MODEL_NAME="/scratch3/yan204/models/Wan2.1-T2V-1.3B"
 export DATASET_NAME="/scratch3/yan204/yxp/Senorita"
-export DATASET_META_NAME="data/json/reasoning_grournd_then_removal.json"
+export DATASET_META_NAME="data/json/reasoning_ground_then_removal.json"
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 export OMP_NUM_THREADS=4
 NCCL_DEBUG=INFO
@@ -27,7 +27,7 @@ accelerate launch \
   --checkpointing_steps=500 \
   --learning_rate=1e-04 \
   --seed=42 \
-  --output_dir="experiments/CoF_ground_then_removal_only_multi_instance_data_zero2" \
+  --output_dir="experiments/CoF_ground_then_removal_only_multi_instance_data_zero2_right_instruction" \
   --gradient_checkpointing \
   --mixed_precision="bf16" \
   --adam_weight_decay=3e-2 \
