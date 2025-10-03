@@ -122,7 +122,10 @@ def parse_args():
     parser.add_argument("--output_dir", type=str, required=True, help="Output directory for generated videos")
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducible generation")
     parser.add_argument("--lora_path", type=str, default=None, help="Path to LoRA checkpoint")
-    return parser.parse_args()
+    parser.add_argument("--num_frames", type=int, default=65, help="Total number of frames (input + mask)")
+    parser.add_argument("--source_frames", type=int, default=33, help="Number of source frames; default 33")
+    args = parser.parse_args()
+    return args
 
 
 # Configuration parameters (keeping your original settings)
@@ -334,11 +337,11 @@ def main():
         # Load video frames and get original dimensions
         input_video, video_height, video_width = load_video_frames(
             video_path,
-            num_frames=video_length,
+            num_frames=args.num_frames,
         )
         
         # Align num_frames to VAE temporal compression
-        num_frames = 65
+        num_frames = args.num_frames
         
         # Generate video
         with torch.no_grad():
@@ -346,7 +349,7 @@ def main():
                 video=input_video,
                 prompt=prompt,
                 num_frames=num_frames,
-                source_frames=33,
+                source_frames=args.source_frames,
                 negative_prompt=negative_prompt,
                 height=video_height,
                 width=video_width,
