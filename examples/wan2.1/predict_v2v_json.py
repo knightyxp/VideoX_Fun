@@ -124,6 +124,7 @@ def parse_args():
     parser.add_argument("--lora_path", type=str, default=None, help="Path to LoRA checkpoint")
     parser.add_argument("--num_frames", type=int, default=65, help="Total number of frames (input + mask)")
     parser.add_argument("--source_frames", type=int, default=33, help="Number of source frames; default 33")
+    parser.add_argument("--videoedit_reasoning", action="store_true", help="Use reasoning-style prompt formatting")
     args = parser.parse_args()
     return args
 
@@ -171,6 +172,25 @@ def save_results(tensor: torch.Tensor, file_path: str, fps: int = 16):
     else:
         save_videos_grid(tensor, file_path, fps=fps)
     print(f"Saved video → {file_path}")
+
+
+def derive_ground_instruction(edit_instruction_text: str) -> str:
+    """Derive grounded object/region phrase from an edit instruction.
+
+    Example: "Remove the woman in white shirt." -> "the woman in white shirt"
+    """
+    s = (edit_instruction_text or '').strip()
+    if s.endswith('.'):
+        s = s[:-1]
+    lower = s.lower()
+    prefixes = [
+        'remove ', 'delete ', 'erase ', 'eliminate ', 'add ', 'make ', 'ground '
+    ]
+    for prefix in prefixes:
+        if lower.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    return s
 
 
 def main():
@@ -328,10 +348,19 @@ def main():
         video_path = item["source_video_path"]
         
         # Create prompt
-        prompt = (
-            "A video sequence showing two parts: the first half shows the original scene, "
-            f"and the second half shows the same scene but {item['qwen_vl_72b_refined_instruction']}"
-        )
+        if args.videoedit_reasoning:
+            edit_text = item.get('edit_instruction', item.get('qwen_vl_72b_refined_instruction', item.get('text', '')))
+            ground_instr = derive_ground_instruction(edit_text)
+            prompt = (
+                "A video sequence showing three parts: first the original scene, "
+                f"then grounded {ground_instr}, and finally the same scene but {edit_text}"
+            )
+        else:
+            edit_text = item.get('qwen_vl_72b_refined_instruction', item.get('edit_instruction', item.get('text', '')))
+            prompt = (
+                "A video sequence showing two parts: the first half shows the original scene, "
+                f"and the second half shows the same scene but {edit_text}"
+            )
         
         # Load video frames and get original dimensions
         input_video, video_height, video_width = load_video_frames(

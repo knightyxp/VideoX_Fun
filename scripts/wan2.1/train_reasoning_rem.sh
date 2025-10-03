@@ -24,7 +24,7 @@ accelerate launch \
   --gradient_accumulation_steps=1 \
   --dataloader_num_workers=2 \
   --num_train_epochs=2 \
-  --checkpointing_steps=500 \
+  --checkpointing_steps=50 \
   --learning_rate=1e-04 \
   --seed=42 \
   --output_dir="experiments/CoF_ground_then_removal_only_multi_instance_data_zero2_right_instruction" \
@@ -40,3 +40,15 @@ accelerate launch \
   --low_vram \
   --video_edit_loss_on_edited_frames_only \
   --use_deepspeed
+
+
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+
+torchrun --nproc_per_node=4 examples/wan2.1/predict_v2v_json.py \
+  --test_json data/test_json/senorita_multi_instance_obj_removal_unic_delete.json \
+  --output_dir results/chain_of_frames_ground_and_rem_test_in_domain_right_instruction \
+  --videoedit_reasoning \
+  --seed 0 \
+  --num_frames 69 \
+  --source_frames 33 \
+  --lora_path experiments/CoF_ground_then_removal_only_multi_instance_data_zero2/checkpoint-302.safetensors
