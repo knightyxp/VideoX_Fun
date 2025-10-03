@@ -509,7 +509,7 @@ class VideoEditReasoningDataset(Dataset):
         text_drop_ratio=0.1,
         enable_bucket=False,
         enable_inpaint=False,
-        instruction_template="A video sequence showing three parts: first the original scene, then grounded frames, and finally the same scene but {edit_instruction}",
+        instruction_template="A video sequence showing three parts: first the original scene, then grounded {ground_instrction}, and finally the same scene but {edit_instruction}",
     ):
         dataset = json.load(open(ann_path))
         if isinstance(dataset, dict):
@@ -523,6 +523,7 @@ class VideoEditReasoningDataset(Dataset):
                     "grounded_video": info[grounded_key],
                     "edited_video": info["edited_video"],
                     "text": text_content,
+                    "edit_instruction": text_content,
                     "type": info.get("type", "video"),
                     "resolution": info.get("resolution", None),
                 })
@@ -646,10 +647,31 @@ class VideoEditReasoningDataset(Dataset):
                     data_info['edited_video'],
                 )
 
-                text = data_info.get('text', '')
-                if self.instruction_template and "{edit_instruction}" in self.instruction_template:
-                    text = self.instruction_template.format(edit_instruction=text)
+                # Prepare instructions
+                edit_text = data_info.get('edit_instruction', data_info.get('text', ''))
 
+                def derive_ground_instruction(edit_instruction_text: str) -> str:
+                    s = (edit_instruction_text or '').strip()
+                    # remove trailing period
+                    if s.endswith('.'):
+                        s = s[:-1]
+                    lower = s.lower()
+                    prefixes = [
+                        'remove ','delete ','erase ','eliminate ','add ', 'make ', 'ground ',
+                    ]
+                    for prefix in prefixes:
+                        if lower.startswith(prefix):
+                            s = s[len(prefix):]
+                            break
+                    return s
+
+                ground_instr = derive_ground_instruction(edit_text)
+
+                text = edit_text
+                if self.instruction_template:
+                    text = self.instruction_template.format(edit_instruction=edit_text, ground_instrction=ground_instr)
+
+                print(f"text: {text}")
                 if random.random() < self.text_drop_ratio:
                     text = ''
 
