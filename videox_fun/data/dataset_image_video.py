@@ -671,7 +671,6 @@ class VideoEditReasoningDataset(Dataset):
                 if self.instruction_template:
                     text = self.instruction_template.format(edit_instruction=edit_text, ground_instrction=ground_instr)
 
-                print(f"text: {text}")
                 if random.random() < self.text_drop_ratio:
                     text = ''
 
